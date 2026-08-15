@@ -270,7 +270,7 @@ V.member=()=>{
   const list=mine.map(m=>`<div class="contact"><div class="ring" style="background:var(--navy)">${(m.name||'?').slice(0,1)}</div>
     <div class="info"><b>${m.name}</b> <span style="color:var(--ink-3);font-size:12px">· ${m.trainer}${m.goal?' · '+m.goal:''}${m.remain?' · 잔여 '+m.remain+'회':''}</span>
     <div class="meta" style="white-space:normal">${m.note||'(특이사항 없음)'}</div></div>
-    <button class="act" onclick="delMember(${m.id})">삭제</button></div>`).join('');
+    <div style="display:flex;flex-direction:column;gap:5px"><button class="act" onclick="editMember(${m.id})">✏️ 입력</button><button class="act" onclick="delMember(${m.id})">삭제</button></div></div>`).join('');
   return `<div class="card"><div class="card-h"><h2>👤 담당회원 특이사항 입력</h2><span class="hint">${WHO==='ALL'?'전체':WHO+' 담당'}</span></div>
   <div class="form-grid">
     <div class="fld"><label>회원명</label><input id="mb-name" placeholder="김영희"></div>
@@ -349,7 +349,15 @@ async function saveMember(){
   if(error){toast('오류: '+error.message);return;}
   toast('저장됨 ✅');await loadAll();render();
 }
-async function delMember(id){await sb.from('members').delete().eq('id',id);toast('삭제됨');await loadAll();render();}
+async function delMember(id){if(!confirm('이 회원을 삭제할까요?'))return;await sb.from('members').delete().eq('id',id);toast('삭제됨');await loadAll();render();}
+async function editMember(id){
+  const m=DB.members.find(x=>x.id===id);if(!m)return;
+  const goal=prompt('운동 목표 (선택)',m.goal||'');if(goal===null)return;
+  const note=prompt('특이사항 (성격·건강·심리·라이프스타일)',m.note||'');if(note===null)return;
+  const {error}=await sb.from('members').update({goal,note}).eq('id',id);
+  if(error){toast('오류: '+error.message);return;}
+  toast('저장됨 ✅');await loadAll();render();
+}
 async function addContact(){
   const n=document.getElementById('ex-name').value.trim();if(!n){toast('회원명 입력');return;}
   const {error}=await sb.from('contacts').insert({member:n,name:n,trainer:document.getElementById('ex-tr').value,remain:+document.getElementById('ex-rem').value||0,note:document.getElementById('ex-note').value.trim()});
