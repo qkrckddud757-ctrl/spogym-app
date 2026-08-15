@@ -108,6 +108,20 @@
   .cc .e{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:11px 12px;}
   .cc .e .t{font-size:11px;color:#ffd98a;font-weight:800;margin-bottom:5px;}
   .cc .e .d{font-size:12.5px;color:#e9eefb;line-height:1.5;}
+  .slideshow{margin:0 20px 18px;}
+  .slide{background:linear-gradient(150deg,#10367D,#0e1a38);border-radius:16px;padding:44px 32px;color:#fff;min-height:320px;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden;}
+  .slide .tag{position:absolute;top:18px;left:26px;font-size:12px;color:#ffd98a;font-weight:800;letter-spacing:2px;}
+  .slide .pg{position:absolute;top:18px;right:26px;font-size:12px;color:#8fa8d9;font-weight:700;}
+  .slide h2{font-size:30px;font-weight:900;line-height:1.32;margin-bottom:14px;letter-spacing:-1px;}
+  .slide h2 b{color:var(--gold);}
+  .slide .big{font-size:38px;font-weight:900;color:var(--gold);margin:8px 0 14px;letter-spacing:-1px;}
+  .slide p{font-size:17px;color:#e9eefb;line-height:1.65;max-width:36ch;}
+  .snav{display:flex;align-items:center;justify-content:center;gap:16px;padding:14px 0 4px;}
+  .snav button{background:var(--navy);color:#fff;border:none;width:44px;height:44px;border-radius:50%;font-size:22px;cursor:pointer;line-height:1;}
+  .snav button:hover{filter:brightness(1.12);}
+  .snav .dots{display:flex;gap:6px;align-items:center;}
+  .snav .dot{width:8px;height:8px;border-radius:50%;background:var(--line);transition:.2s;}
+  .snav .dot.on{background:var(--gold);width:22px;border-radius:4px;}
   .load{padding:60px 20px;text-align:center;color:var(--ink-3);font-size:14px;}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;box-shadow:var(--shadow);opacity:0;transition:.3s;pointer-events:none;z-index:99;}
   .toast.show{opacity:1;}
@@ -269,14 +283,14 @@ V.member=()=>{
     <div>${list||'<p style="padding:18px;color:var(--ink-3)">아직 없습니다. 위에서 입력·저장하세요.</p>'}</div></div>`;
 };
 
-V.consult=()=>`<div class="ai-note">🎨 <b>회원별 상담자료 자동 생성</b> — 상담 전, 그 회원 맞춤 후킹·ESR·SSS 시각화. 심리유형별로 후킹이 바뀝니다.</div>
-  <div class="card"><div class="card-h"><h2>🎨 상담자료 생성</h2></div>
+V.consult=()=>`<div class="ai-note">🎨 <b>회원별 상담 PPT 자동 생성 (10장)</b> — 상담 들어가기 전, 그 회원 맞춤 슬라이드 10장. 심리유형·목표 반영. 상담 시 폰·태블릿으로 넘겨 보여주세요.</div>
+  <div class="card"><div class="card-h"><h2>🎨 상담 PPT 생성 (10장)</h2><span class="hint">‹ › 버튼으로 넘김</span></div>
   <div class="form-grid">
     <div class="fld"><label>회원명</label><input id="cc-name" value="김영희"></div>
     <div class="fld"><label>핵심 목표</label><input id="cc-goal" value="3개월 -8kg"></div>
     <div class="fld"><label>구매 심리 유형</label><select id="cc-psy"><option>가격 민감형</option><option>결과 확신 필요형</option><option>시간 부족형</option><option>신중 결정형</option></select></div>
     <div class="fld full"><label>상황·니즈</label><input id="cc-need" value="결혼식 D-90·인바디 걱정·예전 요요"></div></div>
-  <div class="btn-row"><button class="btn gold" onclick="genCard()">🎨 상담카드 생성</button></div><div id="cc-out"></div></div>`;
+  <div class="btn-row"><button class="btn gold" onclick="genSlides()">🎨 상담 PPT 10장 생성</button></div><div id="cc-out"></div></div>`;
 
 V.guide=()=>`<div class="card"><div class="card-h"><h2>📖 월 1,000만(VAT제외) 안정화 전략</h2><span class="hint">전자책 + 인간심리</span></div>
   <div class="guide">
@@ -343,15 +357,34 @@ async function addContact(){
   toast('추가됨 ✅');await loadAll();render();
 }
 async function delContact(id){await sb.from('contacts').delete().eq('id',id);toast('삭제됨');await loadAll();render();}
-function genCard(){
-  const n=document.getElementById('cc-name').value||'회원',g=document.getElementById('cc-goal').value||'목표',psy=document.getElementById('cc-psy').value,need=document.getElementById('cc-need').value||'';
-  const hooks={'가격 민감형':`하루 커피 한 잔이면<br><b>${g}</b>, 지금 시작합니다`,'결과 확신 필요형':`${n}님 몸, 3개월 뒤<br><b>이렇게 바뀝니다</b>`,'시간 부족형':`주 2회 30분으로<br><b>${g}</b> 만드는 법`,'신중 결정형':`왜 지금이<br><b>${n}님께 최적</b>인가`};
-  document.getElementById('cc-out').innerHTML=`<div class="cc"><div class="grade">ESR·SSS급</div>
-    <div style="font-size:12px;color:#ffd98a;font-weight:800">▼ ${n}님 맞춤 상담 후킹</div><div class="hook">${hooks[psy]}</div>
-    <div class="esr"><div class="e"><div class="t">E·기대파괴</div><div class="d">"운동 열심히"가 아니라 목표 역산 설계</div></div>
-    <div class="e"><div class="t">S·자기관련</div><div class="d">${need||'회원 상황'}에 정확히 조준</div></div>
-    <div class="e"><div class="t">R·해결연결</div><div class="d">오직 이 시스템만 가능한 구조로 재정의</div></div></div></div>`;
+let SLIDES=[],SI=0;
+function genSlides(){
+  const v=id=>document.getElementById(id).value;
+  const n=v('cc-name')||'회원',g=v('cc-goal')||'목표',psy=v('cc-psy'),need=v('cc-need')||'';
+  const price={'가격 민감형':'하루 커피 한 잔 값으로 인생이 바뀝니다','결과 확신 필요형':'결과로 증명하는 프로그램 — 왜 되는지부터 다릅니다','시간 부족형':'주 2회 30분, 바쁜 일상에 딱 맞춰 설계','신중 결정형':'충분히 고민하세요. 단, 가장 좋은 시작은 오늘입니다'}[psy]||'하루 커피 한 잔 값으로 시작합니다';
+  SLIDES=[
+    {tag:'01 · 표지',h:`<b>${n}</b>님을 위한<br>3개월 변화 설계`,p:'스포짐 서교점 · 1:1 맞춤 PT 상담'},
+    {tag:'02 · 현재',h:'지금, 이런 고민<br>있으시죠?',p:need||'막막함 · 요요 · 시간 부족 · 무엇부터 할지 모름'},
+    {tag:'03 · 목표',h:`${n}님의 목표`,big:g,p:'이 목표, 저와 함께 이룹니다'},
+    {tag:'04 · 미래',h:'3개월 후,<br>거울 속 <b>달라진 나</b>',p:'지금 시작하면 만들 수 있는 변화 — Before → After'},
+    {tag:'05 · 왜 지금',h:'왜 <b>"오늘"</b>일까요?',p:'운동 직후 = 의지가 가장 강한 순간. 시간이 지나면 식어버립니다. 가장 좋은 시작은 바로 지금입니다.'},
+    {tag:'06 · 솔루션',h:'혼자 vs <b>설계된 시스템</b>',p:'감이 아니라 목표 역산 설계. 시스템이 결과를 만듭니다.'},
+    {tag:'07 · 프로그램',h:'맞춤 프로그램',p:`주 2회 · ${g} 역산 설계 · 운동+식단+자세+동기까지 1:1 관리`},
+    {tag:'08 · 가치',h:'투자 대비 <b>가치</b>',p:price},
+    {tag:'09 · 혜택',h:'오늘 시작하는 분께',p:'인바디 무료 측정 + 오늘 등록 특별 혜택 · 이번 주 남은 자리 한정'},
+    {tag:'10 · 클로징',h:`${n}님,<br><b>함께 시작해요</b>`,p:'변화는 결심하는 순간 시작됩니다. 그 순간이 바로 지금입니다.'},
+  ];
+  SI=0;showSlide();
 }
+function showSlide(){
+  const s=SLIDES[SI];
+  const dots=SLIDES.map((_,i)=>`<span class="dot ${i===SI?'on':''}"></span>`).join('');
+  document.getElementById('cc-out').innerHTML=`<div class="slideshow">
+    <div class="slide"><div class="tag">${s.tag}</div><div class="pg">${SI+1} / 10</div>
+    <h2>${s.h}</h2>${s.big?`<div class="big">${s.big}</div>`:''}<p>${s.p}</p></div>
+    <div class="snav"><button onclick="slideMove(-1)">‹</button><div class="dots">${dots}</div><button onclick="slideMove(1)">›</button></div></div>`;
+}
+function slideMove(d){SI=(SI+d+SLIDES.length)%SLIDES.length;showSlide();}
 
 const titles={dash:['트레이너 종합','2026년 8월 · VAT제외 · 목표 수업150/매출1,000만'],recon:['재등록 컨택','잔여 10회 미만 자동 + 직접 추가'],input:['매출·수업 입력','저장하면 대시보드 실시간 반영'],member:['담당회원 특이사항','트레이너 입력 → 잔여10회↓ 컨택 자동'],consult:['상담자료 생성','회원 맞춤 후킹·ESR·SSS'],guide:['매출 1000만 전략','전자책 + 인간심리'],ai:['AI 지속 컨설팅','상황별 전략 갱신']};
 function render(){document.getElementById('ttl').textContent=titles[CUR][0];document.getElementById('sub').textContent=titles[CUR][1];document.getElementById('view').innerHTML=V[CUR]();window.scrollTo(0,0);}
