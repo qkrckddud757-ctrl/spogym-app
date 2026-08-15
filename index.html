@@ -187,18 +187,20 @@ async function loadAll(){
 // 트레이너 8월 매출(VAT제외)
 const salesOf=t=>DB.sales.filter(x=>x.trainer===t).reduce((a,x)=>a+(+x.vat||0),0);
 const sessOf=t=>DB.sessions.filter(x=>x.trainer===t).reduce((a,x)=>a+(+x.cnt||0),0);
+function sessionPrice(){ return +(localStorage.getItem('session_price')||50000); } // 세션단가(부가세제외)
+function setSP(v){ localStorage.setItem('session_price',Math.max(1,Math.round(+v)||50000)); render(); }
 function calcPay(t){
-  const sales=salesOf(t.name),sess=sessOf(t.name);let fee=0,inc=0,rl='';
+  const sales=salesOf(t.name),sess=sessOf(t.name);const SP=sessionPrice();let fee=0,inc=0,rl='',unit=0;
   if(t.type==='PT'){
     const b=[[10000000,.53],[9000000,.5],[8000000,.45],[7000000,.37],[5000000,.34],[3500000,.32],[0,.3]];
-    const r=b.find(x=>sales>=x[0])[1];fee=sales*r;rl=(r*100)+'%';
+    const r=b.find(x=>sales>=x[0])[1];unit=Math.round(SP*r);fee=unit*sess;rl=(r*100)+'%';
     if(sales>=10000000)inc=Math.floor((sales-10000000)/1000000)*100000;
-  }else{
-    if(sales>=10000000){fee=sess*33000;rl='세션33k';}
-    else if(sales>=8000000){fee=sess*30000;rl='세션30k';}
-    else{const b=[[5000000,.5],[3500000,.45],[0,.4]];const r=b.find(x=>sales>=x[0])[1];fee=sales*r;rl=(r*100)+'%';}
+  }else{ // 필라: 800↑ 세션 정액, 그 미만 세션단가×배분율
+    if(sales>=10000000){unit=33000;fee=sess*33000;rl='세션 33,000';}
+    else if(sales>=8000000){unit=30000;fee=sess*30000;rl='세션 30,000';}
+    else{const b=[[5000000,.5],[3500000,.45],[0,.4]];const r=b.find(x=>sales>=x[0])[1];unit=Math.round(SP*r);fee=unit*sess;rl=(r*100)+'%';}
   }
-  return {sales,sess,rl,fee,inc,total:info(t.name).base+fee+inc};
+  return {sales,sess,rl,unit,fee,inc,total:info(t.name).base+fee+inc};
 }
 function needNote(t){const s=150-sessOf(t.name),m=10000000-salesOf(t.name),n=[];if(s>0)n.push(`수업 ${s}개↑`);if(m>0)n.push(`매출 ${man(m)}만↑`);return n.length?n.join(' · '):'목표 달성';}
 
@@ -210,7 +212,7 @@ V.dash=()=>{
     const st=(sPct>=100&&mPct>=100)?'good':(sPct<50||mPct<50)?'crit':'warn',stt=st==='good'?'목표달성':st==='crit'?'분발필요':'진행중',bc=st==='good'?'var(--good)':st==='crit'?'var(--crit)':'var(--warn)';
     return `<tr><td><span class="name">${t.name}</span><span class="rank ${t.rank==='팀장'?'pl':''}">${t.rank}${t.type==='필라'?'·필라':''}</span></td>
       <td class="num">${won(t.base)}</td><td class="num" style="font-weight:700">${won(p.sales)}</td>
-      <td class="num" style="color:var(--ink-2)">${p.rl}</td><td class="num">${won(p.fee)}</td><td class="num">${p.inc?won(p.inc):'—'}</td>
+      <td class="num" style="color:var(--ink-2)">${p.rl}<br><span style="font-size:10.5px;color:var(--ink-3)">세션 ${won(p.unit)}</span></td><td class="num" style="font-weight:700">${won(p.fee)}</td><td class="num">${p.inc?won(p.inc):'—'}</td>
       <td class="pay num">${won(p.total)}</td><td class="num">${p.sess}<span style="color:var(--ink-3)">/150</span><br><span class="bar"><i style="width:${sPct}%;background:${bc}"></i></span></td>
       <td><span class="pill ${st}">${stt}</span><div style="font-size:11px;color:var(--ink-2);margin-top:4px;max-width:170px;white-space:normal;text-align:left">${needNote(t)}</div></td></tr>`;
   }).join('');
@@ -221,7 +223,7 @@ V.dash=()=>{
     <div class="kpi"><div class="lab">💳 급여(예상)</div><div class="val num">${man(tP)}<small>만</small></div></div>
     <div class="kpi"><div class="lab">📋 매출 건수</div><div class="val num">${DB.sales.filter(x=>isMe(x.trainer)).length}<small>건</small></div></div>
   </div>
-  <div class="card"><div class="card-h"><h2>👥 급여·목표 자동계산 (DB 실시간)</h2><span class="hint">입력 시트가 채워지면 자동</span></div>
+  <div class="card"><div class="card-h"><h2>👥 급여·목표 자동계산</h2><span class="hint">세션단가 <input type="number" value="${sessionPrice()}" onchange="setSP(this.value)" style="width:78px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:12px"> 원(VAT제외) · 수업료 = 단가 × 율 × 수업수</span></div>
     <div class="tw"><table><thead><tr><th>트레이너</th><th>기본급</th><th>8월매출</th><th>율</th><th>수업료</th><th>인센</th><th>총급여</th><th>수업(150)</th><th>상태·분발</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="seed-note">💡 매출·수업 입력 탭에서 데이터를 넣으면 여기 실시간 반영됩니다.</div></div>`;
 };
@@ -283,14 +285,15 @@ V.member=()=>{
     <div>${list||'<p style="padding:18px;color:var(--ink-3)">아직 없습니다. 위에서 입력·저장하세요.</p>'}</div></div>`;
 };
 
-V.consult=()=>`<div class="ai-note">🎨 <b>회원별 상담 PPT 자동 생성 (10장)</b> — 상담 들어가기 전, 그 회원 맞춤 슬라이드 10장. 심리유형·목표 반영. 상담 시 폰·태블릿으로 넘겨 보여주세요.</div>
-  <div class="card"><div class="card-h"><h2>🎨 상담 PPT 생성 (10장)</h2><span class="hint">‹ › 버튼으로 넘김</span></div>
+V.consult=()=>`<div class="ai-note">🎨 <b>회원 상담자료 원고 생성</b> — 케이스만 입력하면 <b>마케팅 후킹·ESR·SSS·변화판매</b>가 녹은 원고를 자동 완성합니다. 복사해서 NotebookLM에 붙여넣으면 <b>전문 시각 슬라이드가 무료로</b> 만들어져요 (크레딧 X).</div>
+  <div class="card"><div class="card-h"><h2>🎨 상담자료 원고 생성</h2><span class="hint">케이스 입력 → 복사 → NotebookLM</span></div>
   <div class="form-grid">
-    <div class="fld"><label>회원명</label><input id="cc-name" value="김영희"></div>
-    <div class="fld"><label>핵심 목표</label><input id="cc-goal" value="3개월 -8kg"></div>
-    <div class="fld"><label>구매 심리 유형</label><select id="cc-psy"><option>가격 민감형</option><option>결과 확신 필요형</option><option>시간 부족형</option><option>신중 결정형</option></select></div>
-    <div class="fld full"><label>상황·니즈</label><input id="cc-need" value="결혼식 D-90·인바디 걱정·예전 요요"></div></div>
-  <div class="btn-row"><button class="btn gold" onclick="genSlides()">🎨 상담 PPT 10장 생성</button></div><div id="cc-out"></div></div>`;
+    <div class="fld full"><label>케이스·주제 (자유 입력)</label><input id="cs-case" placeholder="예: 다이어트 / 허리통증 / 복근·뱃살 / 체형교정 / 근성장 / 산후 …"></div>
+    <div class="fld"><label>회원명 (선택)</label><input id="cs-name" placeholder="김영희"></div>
+    <div class="fld"><label>목표·기간 (선택)</label><input id="cs-goal" placeholder="예: 3개월 -8kg"></div>
+    <div class="fld full"><label>➕ 추가하고 싶은 내용 (없으면 비워두세요)</label><textarea id="cs-add" placeholder="예: 무릎 재활 병행 / 결혼식 D-90 / 오전만 가능 / 꼭 강조하고 싶은 포인트"></textarea></div>
+  </div>
+  <div class="btn-row"><button class="btn gold" onclick="genScript()">📝 원고 생성</button></div><div id="cs-out"></div></div>`;
 
 V.guide=()=>`<div class="card"><div class="card-h"><h2>📖 월 1,000만(VAT제외) 안정화 전략</h2><span class="hint">전자책 + 인간심리</span></div>
   <div class="guide">
@@ -313,17 +316,41 @@ V.guide=()=>`<div class="card"><div class="card-h"><h2>📖 월 1,000만(VAT제�
     <div class="box"><b>🧩 핵심 = 경우의 수.</b> 정답은 하나가 아니다. 유형·상황별 모든 경우의 수에 대비하면 흔들리지 않는다. 이게 매달 1,000만의 진짜 비결. — 제로코치</div>
   </div></div>`;
 
-V.ai=()=>`<div class="ai-note">🤖 <b>AI 지속 컨설팅 (다음 단계 · Claude API)</b> — 옆에 붙어 관리하듯 상황별 전략 갱신. 특이사항→맞춤 전략, 매출 데이터→진단, 다음달 시뮬레이션.</div>
-  <div class="card"><div class="card-h"><h2 style="font-size:15px">🔮 이번 달 진단 (미리보기)</h2></div>
-  <div class="ai-out">[AI 실시간 진단 예시]
+V.ai=()=>{
+  if(WHO==='ALL'){
+    const tS=STAFF.reduce((a,t)=>a+salesOf(t.name),0),tSe=STAFF.reduce((a,t)=>a+sessOf(t.name),0);
+    const worst=STAFF.map(t=>({t,g:150-sessOf(t.name)})).sort((a,b)=>b.g-a.g).slice(0,3);
+    return `<div class="ai-note">🤖 <b>AI 지속 컨설팅</b> — <b>우측 상단에서 트레이너를 선택</b>하면 그 트레이너 <b>맞춤 진단·액션플랜</b>이 나옵니다. (지금은 팀 전체)</div>
+    <div class="card"><div class="card-h"><h2 style="font-size:15px">📊 팀 전체 진단</h2></div>
+    <div class="ai-out">💰 팀 매출 ${man(tS)}만 / 8,000만 목표
+🏋️ 팀 수업 ${tSe} / 1,200 목표
 
-📉 팀 매출 ${man(STAFF.reduce((a,t)=>a+salesOf(t.name),0))}만 · 목표 8,000만.
+🔴 스케줄 집중 필요 TOP3: ${worst.map(w=>w.t.name+'('+w.g+'개↑)').join(', ')}
+🎯 다음달 역산(인당 1,000만): 재등록400+소개200+신규OT250+체험100+VIP50
 
-🔴 오늘 조치: 매출 0인 트레이너 재컨택 즉시 · 잔여 3회↓ 회원 클로징
-🟠 파이프: 재등록·소개 가동 · 미등록 회원 사유별 재접근
-🎯 다음달 역산: 재등록400+소개200+신규OT250+체험100+VIP50
-
-(API 연동 시 실제 데이터로 정확히·상황별 자동 갱신)</div></div>`;
+▶ 우측 상단 드롭다운에서 트레이너를 고르면 개인별 구체 컨설팅이 나옵니다.</div></div>`;
+  }
+  const t=STAFF.find(s=>s.name===WHO); const p=calcPay(t);
+  const salesGap=Math.max(0,10000000-p.sales), sessGap=Math.max(0,150-p.sess);
+  const cts=DB.members.filter(m=>m.trainer===WHO&&m.remain>0&&m.remain<10).sort((a,b)=>a.remain-b.remain);
+  const urgent=cts.filter(c=>c.remain<=3);
+  let o=`▎${t.name} ${t.rank}${t.type==='필라'?'(필라)':''} 맞춤 컨설팅\n\n`;
+  o+=`💰 매출 ${man(p.sales)}만 / 1,000만 (${Math.round(p.sales/100000)}%)\n`;
+  o+=`🏋️ 수업 ${p.sess} / 150 · 수업료율 ${p.rl}\n`;
+  o+=`💳 예상 급여 ${won(p.total)}원 (기본급+수업료${p.inc?'+인센':''})\n\n`;
+  o+=`🎯 지금 해야 할 것\n`;
+  if(cts.length){ o+=`① 재등록 컨택 ${cts.length}명 — ${cts.slice(0,6).map(c=>c.name+'('+c.remain+'회)').join(', ')}${cts.length>6?' 외':''}\n`;
+    if(urgent.length) o+=`   🔴 잔여 3회↓ ${urgent.length}명(${urgent.slice(0,4).map(c=>c.name).join(', ')})은 오늘 즉시 클로징\n`;
+  } else o+=`① 현재 잔여10회↓ 컨택 대상 없음 — 신규·소개 파이프 집중\n`;
+  if(sessGap>0) o+=`② 수업 ${sessGap}개 부족 — 스케줄 더 채우기 (수업량이 곧 수업료)\n`;
+  if(salesGap>0) o+=`③ 매출 ${man(salesGap)}만 부족 — 재등록${cts.length}명 클로징 + 신규OT + 소개 요청\n`;
+  o+=`\n💡 코칭 포인트\n`;
+  o+= p.sess>=100 ? `수업량 최상위. 재등록 파이프만 잡으면 매출 급상승. 소진 임박 회원부터 "다음 목표" 그려주세요.`
+     : p.sess>=50 ? `수업량 양호. 재등록·소개로 매출 파이프를 두껍게. 변화 큰 회원에게 소개 요청.`
+     : `수업량부터 확보. 스케줄을 채우고, OT·체험 전환율을 높이세요. 당일등록 심리 활용.`;
+  return `<div class="ai-note">🤖 <b>${t.name} ${t.rank} 맞춤 컨설팅</b> — 실제 데이터 기반 (Claude API 연동 시 특이사항·심리까지 반영해 더 정교해집니다)</div>
+    <div class="card"><div class="ai-out">${o}</div></div>`;
+};
 
 // ===== DB 저장 함수 =====
 async function saveSale(){
@@ -393,6 +420,52 @@ function showSlide(){
     <div class="snav"><button onclick="slideMove(-1)">‹</button><div class="dots">${dots}</div><button onclick="slideMove(1)">›</button></div></div>`;
 }
 function slideMove(d){SI=(SI+d+SLIDES.length)%SLIDES.length;showSlide();}
+function genScript(){
+  const cs=document.getElementById('cs-case').value.trim()||'운동';
+  const nm=document.getElementById('cs-name').value.trim()||'회원';
+  const goal=document.getElementById('cs-goal').value.trim();
+  const add=document.getElementById('cs-add').value.trim();
+  const script=`# ${cs} 회원 상담 자료 (스포짐 서교점 · ${nm}님 맞춤)
+
+[제작 지시 — 아래 톤·구조로 시각 슬라이드를 만들어줘]
+· 회원이 "완전 내 얘기네" 하고 공감·몰입하게. 쉬운 말, 전문적이고 세련된 디자인.
+· 마케팅 후킹 + ESR(기대파괴·자기관련성·해결연결) + SSS급.
+· "변화를 판다" — Before/After와 감정(자신감·일상·시선)을 강조.
+· 각 슬라이드는 핵심 하나씩. 인체·해부·개념을 그림으로 시각화.
+
+## 1. 공감 — "완전 내 얘기"
+${cs} 때문에 이런 고민 있으시죠? ${nm}님이 겪어온 구체적 상황을 짚어주기 (다짐→포기 반복 등). 혼자 하니까 안 됐던 것.
+
+## 2. 왜 지금까지 안 됐나
+${cs}에서 흔히 하는 오해·잘못된 방법을 전문적으로 짚기. 근본 원인.
+
+## 3. 현재 진단
+${cs} 관련 현재 상태를 숫자·시각으로 명확히.
+
+## 4. 해결책 — 변화의 핵심${goal?' (목표: '+goal+')':''}
+근본 원인을 해결하는 방법. 운동+식단/자세+관리를 함께. 왜 이 시스템인지.
+
+## 5. Before → After (변화를 판다)
+${cs} 개선 후의 변화. 숫자만이 아니라 달라진 일상·자신감·주변 시선.
+
+## 6. 로드맵
+단계별 계획을 그래프·타임라인으로.
+
+## 7. 마무리
+가장 좋은 시작은 바로 오늘. ${nm}님 곁에서 함께 만들어 드린다.${add?'\n\n## ✋ 트레이너 추가 요청 (꼭 반영)\n'+add:''}`;
+  const prompt=`PT 회원 상담용 시각 슬라이드로 만들어줘. 회원이 "완전 내 얘기네"라고 공감하도록 쉬운 말이되 전문적이고 세련되게. 변화(Before/After) 강조, ${cs} 관련 인체·개념을 그림으로 시각화. 각 슬라이드 핵심 하나씩.`;
+  document.getElementById('cs-out').innerHTML=`
+    <div style="padding:2px 20px 6px"><b style="font-size:13px">① 원고 — NotebookLM 소스에 붙여넣기</b></div>
+    <textarea readonly id="cs-script" style="width:calc(100% - 40px);margin:0 20px;min-height:210px;font:inherit;font-size:12px;line-height:1.5;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink)"></textarea>
+    <div class="btn-row"><button class="btn" onclick="cpy('cs-script')">📋 원고 복사</button></div>
+    <div style="padding:2px 20px 6px"><b style="font-size:13px">② 생성 프롬프트 — 슬라이드 만들 때 입력</b></div>
+    <textarea readonly id="cs-prompt" style="width:calc(100% - 40px);margin:0 20px;min-height:64px;font:inherit;font-size:12px;line-height:1.5;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink)"></textarea>
+    <div class="btn-row"><button class="btn" onclick="cpy('cs-prompt')">📋 프롬프트 복사</button><button class="btn gold" onclick="window.open('https://notebooklm.google.com/','_blank')">🚀 NotebookLM 열기</button></div>
+    <div class="seed-note">순서: ① 원고 복사 → NotebookLM 새 노트북에 <b>소스로 붙여넣기</b> → Studio → <b>"슬라이드 자료 생성"</b> → ② 프롬프트 붙여넣기 → 완성 (무료·크레딧 X)</div>`;
+  document.getElementById('cs-script').value=script;
+  document.getElementById('cs-prompt').value=prompt;
+}
+function cpy(id){const el=document.getElementById(id);el.select();try{navigator.clipboard.writeText(el.value);}catch(e){try{document.execCommand('copy');}catch(_){}}toast('복사됨 ✅');}
 
 const titles={dash:['트레이너 종합','2026년 8월 · VAT제외 · 목표 수업150/매출1,000만'],recon:['재등록 컨택','잔여 10회 미만 자동 + 직접 추가'],input:['매출·수업 입력','저장하면 대시보드 실시간 반영'],member:['담당회원 특이사항','트레이너 입력 → 잔여10회↓ 컨택 자동'],consult:['상담자료 생성','회원 맞춤 후킹·ESR·SSS'],guide:['매출 1000만 전략','전자책 + 인간심리'],ai:['AI 지속 컨설팅','상황별 전략 갱신']};
 function render(){document.getElementById('ttl').textContent=titles[CUR][0];document.getElementById('sub').textContent=titles[CUR][1];document.getElementById('view').innerHTML=V[CUR]();window.scrollTo(0,0);}
