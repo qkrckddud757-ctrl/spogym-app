@@ -269,11 +269,13 @@ V.input=()=>`
 
 V.member=()=>{
   const mine=DB.members.filter(m=>isMe(m.trainer));
-  const list=mine.map(m=>`<div class="contact"><div class="ring" style="background:var(--navy)">${(m.name||'?').slice(0,1)}</div>
-    <div class="info"><b>${m.name}</b> <span style="color:var(--ink-3);font-size:12px">· ${m.trainer}${m.goal?' · '+m.goal:''}${m.remain?' · 잔여 '+m.remain+'회':''}</span>
-    <div class="meta" style="white-space:normal">${m.note||'(특이사항 없음)'}</div></div>
-    <div style="display:flex;flex-direction:column;gap:5px"><button class="act" onclick="editMember(${m.id})">✏️ 입력</button><button class="act" onclick="delMember(${m.id})">삭제</button></div></div>`).join('');
-  return `<div class="card"><div class="card-h"><h2>👤 담당회원 특이사항 입력</h2><span class="hint">${WHO==='ALL'?'전체':WHO+' 담당'}</span></div>
+  const list=mine.map(m=>`<div class="contact"><div class="ring" style="background:var(--navy)">${esc((m.name||'?').slice(0,1))}</div>
+    <div class="info"><b>${esc(m.name)}</b> <span style="color:var(--ink-3);font-size:12px">· ${m.trainer}${m.goal?' · '+esc(m.goal):''}${m.remain?' · 잔여 '+m.remain+'회':''}</span>
+    <div class="meta" style="white-space:normal">${esc(m.note)||'(특이사항 없음)'}</div></div>
+    <div style="display:flex;flex-direction:column;gap:5px"><button class="act" style="background:var(--navy);color:#fff;border-color:var(--navy)" onclick="showStrategy(${m.id})">🧠 전략</button><button class="act" onclick="editMember(${m.id})">✏️ 입력</button><button class="act" onclick="delMember(${m.id})">삭제</button></div></div>
+    <div id="strat-${m.id}" class="ai-out" style="display:none;margin:0 18px 14px;font-size:12.5px"></div>`).join('');
+  return `<div class="card"><div class="card-h"><h2>👤 담당회원 특이사항 입력</h2><span class="hint">${WHO==='ALL'?'전체':WHO+' 담당'} · 🧠전략=자동 컨설팅</span></div>
+  <div class="ai-note" style="margin:0 0 4px">💡 목표·특이사항을 입력하면 회원별 <b>🧠 관리 전략</b>(수업 진행·관리·소통·목표 셋팅·재등록 명분)이 자동으로 나옵니다.</div>
   <div class="form-grid">
     <div class="fld"><label>회원명</label><input id="mb-name" placeholder="김영희"></div>
     <div class="fld"><label>담당</label><select id="mb-tr">${STAFF.map(t=>`<option${t.name===WHO?' selected':''}>${t.name}</option>`).join('')}</select></div>
@@ -348,7 +350,22 @@ V.ai=()=>{
   o+= p.sess>=100 ? `수업량 최상위. 재등록 파이프만 잡으면 매출 급상승. 소진 임박 회원부터 "다음 목표" 그려주세요.`
      : p.sess>=50 ? `수업량 양호. 재등록·소개로 매출 파이프를 두껍게. 변화 큰 회원에게 소개 요청.`
      : `수업량부터 확보. 스케줄을 채우고, OT·체험 전환율을 높이세요. 당일등록 심리 활용.`;
-  return `<div class="ai-note">🤖 <b>${t.name} ${t.rank} 맞춤 컨설팅</b> — 실제 데이터 기반 (Claude API 연동 시 특이사항·심리까지 반영해 더 정교해집니다)</div>
+  // ── 담당회원 특이사항 종합 컨설팅 ──
+  const mine=DB.members.filter(m=>m.trainer===WHO);
+  if(mine.length){
+    const dist={}; mine.forEach(m=>{const c=memberStrategy(m).cs.name;dist[c]=(dist[c]||0)+1;});
+    o+=`\n\n━━━━━━━━━━━━━━━━\n👥 담당회원 ${mine.length}명 · 유형 분포\n   ${Object.entries(dist).sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+' '+v+'명').join('  /  ')}`;
+  }
+  if(cts.length){
+    o+=`\n\n🔄 재등록 임박 회원별 "맞춤 명분" (잔여 10회↓ · ${cts.length}명)\n   ※ 회원 이름만 부르지 말고, 아래 명분으로 "다음 목표"를 그려주세요.\n`;
+    cts.slice(0,10).forEach(c=>{ const s=memberStrategy(c); const flag=c.remain<=3?'🔴':'🟡';
+      o+=`\n   ${flag} ${esc(c.name)} (${c.remain}회) · ${s.cs.name}\n       → ${s.cs.rereg}`; });
+    if(cts.length>10) o+=`\n\n   … 외 ${cts.length-10}명 (재등록 컨택 탭 전체 목록)`;
+    const est=cts.reduce((a,c)=>a+Math.max(30-c.remain,20)*sessionPrice(),0);
+    o+=`\n\n💰 이 ${cts.length}명이 평균 재등록(20~30회)하면 예상 매출 약 ${man(est)}만 → 목표 1,000만의 ${Math.min(100,Math.round(est/100000))}%`;
+  }
+  o+=`\n\n📌 실행 우선순위\n   1) 오늘 — 잔여 3회↓ ${urgent.length}명 즉시 클로징 (운동 직후 감정 피크에서)\n   2) 이번 주 — 잔여 10회↓ 전원 "🧠 전략"의 명분으로 다음 목표 상담\n   3) 상시 — 변화 큰 회원에게 소개 요청 (자기 변화 인지한 순간)`;
+  return `<div class="ai-note">🤖 <b>${t.name} ${t.rank} 맞춤 컨설팅</b> — 매출·수업·급여 + <b>담당회원 특이사항·심리</b>까지 반영한 실전 액션플랜. (회원별 상세는 <b>담당회원 탭 🧠 전략</b>)</div>
     <div class="card"><div class="ai-out">${o}</div></div>`;
 };
 
@@ -455,15 +472,96 @@ ${cs} 개선 후의 변화. 숫자만이 아니라 달라진 일상·자신감·
 가장 좋은 시작은 바로 오늘. ${nm}님 곁에서 함께 만들어 드린다.${add?'\n\n## ✋ 트레이너 추가 요청 (꼭 반영)\n'+add:''}`;
   const prompt=`PT 회원 상담용 시각 슬라이드로 만들어줘. 회원이 "완전 내 얘기네"라고 공감하도록 쉬운 말이되 전문적이고 세련되게. 변화(Before/After) 강조, ${cs} 관련 인체·개념을 그림으로 시각화. 각 슬라이드 핵심 하나씩.`;
   document.getElementById('cs-out').innerHTML=`
-    <div style="padding:2px 20px 6px"><b style="font-size:13px">① 원고 — NotebookLM 소스에 붙여넣기</b></div>
+    <div style="padding:4px 20px 6px"><b style="font-size:13px;color:var(--navy)">📄 ① 원고</b> <span style="font-size:11.5px;color:var(--ink-3)">— NotebookLM <b>[소스]</b> 칸에 넣을 "자료의 재료" (아래 3단계)</span></div>
     <textarea readonly id="cs-script" style="width:calc(100% - 40px);margin:0 20px;min-height:210px;font:inherit;font-size:12px;line-height:1.5;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink)"></textarea>
     <div class="btn-row"><button class="btn" onclick="cpy('cs-script')">📋 원고 복사</button></div>
-    <div style="padding:2px 20px 6px"><b style="font-size:13px">② 생성 프롬프트 — 슬라이드 만들 때 입력</b></div>
+    <div style="padding:4px 20px 6px"><b style="font-size:13px;color:var(--navy)">🎨 ② 생성 프롬프트</b> <span style="font-size:11.5px;color:var(--ink-3)">— 슬라이드 만들 때 <b>[맞춤설정 ✏️]</b> 칸에 넣을 "지시문" (아래 5단계)</span></div>
     <textarea readonly id="cs-prompt" style="width:calc(100% - 40px);margin:0 20px;min-height:64px;font:inherit;font-size:12px;line-height:1.5;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink)"></textarea>
     <div class="btn-row"><button class="btn" onclick="cpy('cs-prompt')">📋 프롬프트 복사</button><button class="btn gold" onclick="window.open('https://notebooklm.google.com/','_blank')">🚀 NotebookLM 열기</button></div>
-    <div class="seed-note">순서: ① 원고 복사 → NotebookLM 새 노트북에 <b>소스로 붙여넣기</b> → Studio → <b>"슬라이드 자료 생성"</b> → ② 프롬프트 붙여넣기 → 완성 (무료·크레딧 X)</div>`;
+    <div class="guide" style="margin:6px 20px 16px"><div class="box" style="border-left-color:var(--navy);margin:0"><b style="color:var(--navy)">📌 처음이세요? 이 순서 그대로 따라하세요 (전부 무료·크레딧 X)</b>
+<div style="margin-top:8px;font-size:12.5px;line-height:1.85">
+<b>1.</b> 위 <b>[🚀 NotebookLM 열기]</b> 클릭 → 본인 <b>구글 계정</b>으로 로그인<br>
+<b>2.</b> <b>[+ 만들기]</b>(새 노트북) 클릭 → 소스 추가창에서 <b>[복사된 텍스트]</b> 선택<br>
+<b>3.</b> 위 <b>[📋 원고 복사]</b> 누른 뒤 그 칸에 <b>붙여넣기(Ctrl+V)</b> → <b>[삽입]</b><br>
+<b>4.</b> 오른쪽 <b>[스튜디오]</b> 패널에서 <b>[슬라이드 자료]</b> 클릭<br>
+<b>5.</b> <b>[맞춤설정 ✏️]</b> → <b>프롬프트 칸</b>에 위 <b>[📋 프롬프트 복사]</b> 붙여넣기 → 형식 <b>발표자 슬라이드</b>·언어 <b>한국어</b> → <b>[생성]</b><br>
+<b>6.</b> 몇 분 뒤 완성 → <b>점 3개(⋮)</b> → <b>PowerPoint(.pptx) 다운로드</b> → 태블릿·A4로 회원에게!
+</div></div></div>`;
   document.getElementById('cs-script').value=script;
   document.getElementById('cs-prompt').value=prompt;
+}
+// ===== 회원 특이사항 → 맞춤 관리 컨설팅 엔진 =====
+const CASE_LIB=[
+  {k:['다이어트','감량','체중','살','뱃살','바디프로필','프로필','바프','뱃','비만'],name:'체중 감량',
+   lesson:'유산소+근력 병행. 매 수업 시작에 인바디·둘레 변화를 짚어주기. 식단 사진 피드백을 루틴화.',
+   talk:'정체기(2~3주 체중 안 빠짐)를 미리 예고 → 이탈 방지. "지방은 계단식으로 빠진다"를 각인.',
+   dream:'"3개월 뒤 인생 사진 한 장" · 입고 싶었던 옷 · 거울 속 라인. 목표 몸을 구체적으로 그려주기.',
+   rereg:'감량 성공 후 "이제 라인·유지" 다음 단계 명분. 멈추면 요요(손실회피)를 시각화.'},
+  {k:['재활','통증','무릎','허리','디스크','어깨','회복','부상','아픔','아프','목'],name:'통증·재활',
+   lesson:'통증 부위는 회피 + 주변근 강화. 매 수업 통증 스케일(0~10)을 기록해 호전을 추적.',
+   talk:'"통증이 줄고 있다"를 숫자로 각인 → 안심이 최우선. 절대 무리 강요 X.',
+   dream:'"안 아프고 일상·운동이 자유로운 몸". 통증 없이 하고 싶던 활동을 그려주기.',
+   rereg:'"재발 방지·완전 회복까지" 명분. 지금 멈추면 되돌아감 → 유지 관리 필요성 강조.'},
+  {k:['체형','교정','자세','거북','라운드','골반','틀어','비대칭','굽은','스웨이'],name:'체형 교정',
+   lesson:'평가 → 불균형 근육 이완 + 약한 근육 강화. Before 자세 사진으로 변화를 시각화.',
+   talk:'거울·사진으로 자세 변화를 눈으로 확인시키기. 통증 개선도 함께 짚기.',
+   dream:'"똑바로 선 실루엣 · 옷 태 · 안 아픈 목·허리". 달라진 라인을 상상시키기.',
+   rereg:'"자세는 습관이라 유지 관리 필수" 명분. 굳히기 단계를 제안.'},
+  {k:['근성장','벌크','근육','덩치','어깨넓','가슴','등','팔','두께','볼륨','힙'],name:'근성장·볼륨',
+   lesson:'점진적 과부하 · 부위 분할. 중량·둘레 기록을 매번 갱신해 성취를 각인.',
+   talk:'숫자(중량·둘레) 성장으로 동기 자극. "지난달보다 ○kg 늘었다"를 보여주기.',
+   dream:'"티셔츠 태가 달라지는 몸 · 셔츠 어깨 라인 · 볼륨 있는 힙". 원하는 실루엣을 그려주기.',
+   rereg:'"다음 부위·다음 중량" 목표 명분. 근육은 쉬면 빠짐(손실회피)을 강조.'},
+  {k:['산후','출산','임신','육아'],name:'산후 회복',
+   lesson:'코어·골반저근 회복 우선. 무리 없는 강도, 육아 병행을 배려한 짧고 확실한 루틴.',
+   talk:'"출산 전 몸 회복 가능"을 안심시키기. 컨디션·수면 상태를 늘 체크.',
+   dream:'"출산 전 체력+라인 회복 · 아이와 지치지 않고 놀아주는 체력".',
+   rereg:'"체력·라인 완성" 다음 단계. 지금이 회복 골든타임(놓치면 손실).'},
+  {k:['체력','건강','활력','기초','초보','헬린이','시작','입문'],name:'체력·건강',
+   lesson:'기초 체력·바른 폼부터. 작은 성공을 자주 만들어 운동을 습관화.',
+   talk:'"할 수 있다"는 자신감을 심기. 어려운 용어 X, 쉽게 설명.',
+   dream:'"지치지 않는 하루 · 계단에서 안 숨참 · 활력 넘치는 일상".',
+   rereg:'"이제 막 습관 붙었을 때 멈추면 리셋" 명분. 다음 목표를 제시.'},
+];
+const PSY_LIB=[
+  {k:['신중','고민','결정','천천','생각'],t:'신중 결정형',tip:'강압 X. 근거·데이터로 자기설득 유도. "충분히 고민하셔도 됩니다, 대신 가장 좋은 시작은 오늘".'},
+  {k:['가격','비싸','부담','돈','금액','비용'],t:'가격 민감형',tip:'가치 재정의. 회당 비용·하루 커피값으로 쪼개기. "결과로 증명" 프레임.'},
+  {k:['시간','바쁨','바빠','오전','저녁','직장','야근','주말','퇴근'],t:'시간 제약형',tip:'주 2회 30분 압축 설계. 바쁜 일상에 맞춘 루틴을 강조.'},
+  {k:['자신감','도전','열정','적극','의욕','넘치'],t:'자신감·도전형',tip:'더 높은 목표 제시로 성장 자극. 성취 기록을 계속 갱신해 몰입 유지.'},
+  {k:['인바디','집착','숫자','조급','급함','빨리'],t:'결과 집착형',tip:'정체기를 미리 설명. 숫자 외 변화(라인·컨디션·힘)도 함께 짚어 조급함 완화.'},
+  {k:['반대','남편','아내','가족','부모','와이프','눈치'],t:'주변 반대형',tip:'결과로 증명. "가족도 놀랄 변화" 프레임. 초반 작은 성과를 빠르게.'},
+  {k:['소심','내성','부끄','조용','낯가'],t:'내성적형',tip:'편안한 분위기·1:1 배려. 무리한 푸시 X, 신뢰부터 쌓기.'},
+];
+function memberStrategy(m){
+  const txt=(m.goal||'')+' '+(m.note||'');
+  const has=ks=>ks.some(k=>txt.includes(k));
+  const cs=CASE_LIB.find(c=>has(c.k))||CASE_LIB[5];
+  const psy=PSY_LIB.filter(p=>has(p.k));
+  const rem=+m.remain||0; let timing;
+  if(rem>0&&rem<=3) timing='🔴 잔여 '+rem+'회 — 이번 주 즉시 재등록 클로징. 운동 직후(감정 피크)에 다음 목표 제안.';
+  else if(rem>0&&rem<10) timing='🟡 잔여 '+rem+'회 — 지금부터 재등록 명분 심기. 매 수업 변화 각인 + 다음 단계 그려주기.';
+  else if(rem>=10) timing='🟢 잔여 '+rem+'회 — 신뢰·변화 시각화 단계. Before 기록을 남겨두면 나중 재등록 근거.';
+  else timing='잔여 미입력 — 세션 확인 후 타이밍 판단.';
+  return {cs,psy,timing,rem};
+}
+function esc(s){return String(s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+function strategyText(m){
+  const s=memberStrategy(m);
+  const tag=s.cs.name+(s.psy.length?' · '+s.psy.map(p=>p.t).join('·'):'');
+  let o=`🧠 ${esc(m.name)}님 관리 전략   [ ${tag} ]\n`;
+  o+=(m.goal?`목표: ${esc(m.goal)}   `:'')+(m.note?`특이사항: ${esc(m.note)}`:'')+`\n\n`;
+  o+=`🏋️ 수업 진행\n   ${s.cs.lesson}\n\n`;
+  o+=`💬 관리·소통\n   ${s.cs.talk}\n`;
+  s.psy.forEach(p=>{o+=`   · [${p.t}] ${p.tip}\n`;});
+  o+=`\n🎯 목표 셋팅·상상시키기\n   ${s.cs.dream}\n\n`;
+  o+=`🔄 재등록 명분\n   ${s.cs.rereg}\n   ${s.timing}`;
+  return o;
+}
+function showStrategy(id){
+  const box=document.getElementById('strat-'+id);if(!box)return;
+  if(box.style.display==='block'){box.style.display='none';return;}
+  const m=DB.members.find(x=>x.id===id);if(!m)return;
+  box.textContent=strategyText(m);box.style.display='block';
 }
 function cpy(id){const el=document.getElementById(id);el.select();try{navigator.clipboard.writeText(el.value);}catch(e){try{document.execCommand('copy');}catch(_){}}toast('복사됨 ✅');}
 
