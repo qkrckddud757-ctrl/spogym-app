@@ -195,7 +195,9 @@ function setSP(v){ localStorage.setItem('session_price',Math.max(1,Math.round(+v
 // 회원별 실단가 반영: 수업료원천 Σ(회원단가×당월진행), 가중평균 실단가
 const feeBaseOf=t=>DB.members.filter(m=>m.trainer===t).reduce((a,m)=>a+(+m.unit||0)*(+m.done||0),0);
 const doneOf=t=>DB.members.filter(m=>m.trainer===t).reduce((a,m)=>a+(+m.done||0),0);
-const effUnitOf=t=>{const d=doneOf(t);return d>0?Math.round(feeBaseOf(t)/d):sessionPrice();}; // 회원 가중평균 실단가
+const effUnitOf=t=>{const ms=DB.members.filter(m=>m.trainer===t);const d=ms.reduce((a,m)=>a+(+m.done||0),0);
+  if(d>0)return Math.round(ms.reduce((a,m)=>a+(+m.unit||0)*(+m.done||0),0)/d); // 회원 가중평균 실단가
+  const us=ms.map(m=>+m.unit||0).filter(x=>x>0); return us.length?Math.round(us.reduce((a,b)=>a+b,0)/us.length):sessionPrice();}; // 진행0이면 회원단가 단순평균
 function calcPay(t){
   const sales=salesOf(t.name),sess=sessOf(t.name);const eu=effUnitOf(t.name);let fee=0,inc=0,rl='',unit=eu;
   if(t.type==='PT'){
@@ -452,7 +454,23 @@ ${bestType?'🔥 강점 분야: '+bestType[0]+' (확정 '+man(bestType[1].c)+'�
     <div class="tw"><table><thead><tr><th>채널</th><th>진행</th><th>등록</th><th>실패</th><th>보류</th><th>미정</th><th>등록률</th></tr></thead><tbody>${srcRows||'<tr><td colspan=7 style="padding:16px;color:var(--ink-3)">체험 데이터 없음</td></tr>'}</tbody></table></div>
     <div class="seed-note">💡 미정·보류 건은 재등록 컨택·체험 관리 탭에서 상태를 업데이트하면 등록률이 정확해집니다.</div></div>
   <div class="card"><div class="card-h"><h2>📈 능력 진단 ${WHO==='ALL'?'(팀 전체)':'· '+WHO}</h2><span class="hint">매출·수업·계획실행·체험전환·재등록</span></div>
-    <div style="padding:6px 20px 16px">${ability}</div></div>`;
+    <div style="padding:6px 20px 16px">${ability}</div></div>
+  ${WHO==='ALL'?`<div class="card"><div class="card-h"><h2>✍️ 매출계획 직접 입력</h2><span class="hint">트레이너 선택 필요</span></div><div class="seed-note" style="padding:14px 20px">우측 상단에서 <b>본인 이름</b>을 선택하면 매출계획을 그때그때 추가·수정·삭제할 수 있어요.</div></div>`:`<div class="card"><div class="card-h"><h2>✍️ ${WHO} 매출계획 입력</h2><span class="hint">추가하면 위 집계에 실시간 반영</span></div>
+    <div class="form-grid">
+      <div class="fld"><label>주차</label><select id="pl-wk">${['1주','2주','3주','4주','5주'].map(w=>`<option>${w}</option>`).join('')}</select></div>
+      <div class="fld"><label>회원명</label><input id="pl-name" placeholder="홍길동"></div>
+      <div class="fld"><label>유형</label><select id="pl-type">${['신규','재등록','소개','VIP','당근'].map(x=>`<option>${x}</option>`).join('')}</select></div>
+      <div class="fld"><label>예상금액(원)</label><input id="pl-amt" type="number" placeholder="1650000"></div>
+      <div class="fld"><label>상태</label><select id="pl-st">${['컨택 예정','답변 예정','결제 예정','결제 완료','미등록'].map(x=>`<option>${x}</option>`).join('')}</select></div>
+    </div>
+    <div class="btn-row"><button class="btn gold" onclick="savePlan()">💾 계획 추가</button></div>
+    <div>${pl.map(p=>{const c=planCat(p.status);return `<div class="contact"><div class="info"><b>${esc(p.name)}</b> <span style="color:var(--ink-3);font-size:12px">· ${p.wk||''} · ${p.type||''} · ${man(p.amount)}만</span>
+      <div style="margin-top:5px;display:flex;gap:6px;align-items:center"><select onchange="setPlanStatus(${p.id},this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--ink)">${['컨택 예정','답변 예정','결제 예정','결제 완료','미등록','실패'].map(s=>`<option${p.status===s?' selected':''}>${s}</option>`).join('')}</select><span class="pill" style="background:${c.c};color:#fff;font-size:10px;padding:2px 7px">${c.k}</span></div></div>
+      <button class="act" onclick="delPlan(${p.id})">삭제</button></div>`;}).join('')||'<div class="seed-note" style="padding:12px 20px">아직 등록한 계획이 없습니다. 위에서 추가하세요.</div>'}</div></div>`}
+  <div class="card"><div class="card-h"><h2>📞 체험 상태 태깅 ${WHO==='ALL'?'(전체)':'· '+WHO}</h2><span class="hint">미정 건을 등록·실패·보류로</span></div>
+    <div>${tr.filter(t=>!t.reg&&!/실패|보류/.test(t.status||'')).slice(0,60).map(t=>`<div class="contact"><div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.source}${t.trainer?' · '+t.trainer:''}</span></div>
+      <div style="display:flex;gap:4px"><button class="act" style="background:var(--good);color:#fff;border-color:var(--good)" onclick="setTrial(${t.id},'등록')">등록</button><button class="act" style="background:var(--crit);color:#fff;border-color:var(--crit)" onclick="setTrial(${t.id},'실패')">실패</button><button class="act" style="background:var(--warn);color:#fff;border-color:var(--warn)" onclick="setTrial(${t.id},'보류')">보류</button></div></div>`).join('')||'<div class="seed-note" style="padding:12px 20px">태깅할 미정 체험이 없습니다.</div>'}</div>
+    <div class="seed-note">💡 상태를 바꾸면 위 채널 등록률·KPI가 즉시 반영됩니다. (등록=성공, 실패=미등록 확정, 보류=지속관리)</div></div>`;
 };
 
 // ===== DB 저장 함수 =====
@@ -649,6 +667,14 @@ function showStrategy(id){
   const m=DB.members.find(x=>x.id===id);if(!m)return;
   box.textContent=strategyText(m);box.style.display='block';
 }
+async function savePlan(){
+  const name=document.getElementById('pl-name').value.trim(); if(!name){toast('회원명 입력');return;}
+  const {error}=await sb.from('plans').insert({trainer:WHO,wk:document.getElementById('pl-wk').value,name,type:document.getElementById('pl-type').value,amount:+document.getElementById('pl-amt').value||0,status:document.getElementById('pl-st').value});
+  if(error){toast('오류: '+error.message);return;} toast('계획 추가됨 ✅');await loadAll();render();
+}
+async function delPlan(id){ if(!confirm('이 계획을 삭제할까요?'))return; await sb.from('plans').delete().eq('id',id); toast('삭제됨'); await loadAll();render(); }
+async function setPlanStatus(id,st){ await sb.from('plans').update({status:st}).eq('id',id); toast('상태 변경 ✅'); await loadAll();render(); }
+async function setTrial(id,st){ const reg=st==='등록'; await sb.from('trials').update({status:st,reg}).eq('id',id); toast('업데이트 ✅'); await loadAll();render(); }
 function cpy(id){const el=document.getElementById(id);el.select();try{navigator.clipboard.writeText(el.value);}catch(e){try{document.execCommand('copy');}catch(_){}}toast('복사됨 ✅');}
 
 const titles={dash:['트레이너 종합','2026년 8월 · VAT제외 · 목표 수업150/매출1,000만'],plan:['당월 매출계획','계획·예상·확정 매출 + 채널 등록률 + 능력 진단'],recon:['재등록 컨택','잔여 10회 미만 자동 + 직접 추가'],input:['매출·수업 입력','저장하면 대시보드 실시간 반영'],member:['담당회원 특이사항','트레이너 입력 → 잔여10회↓ 컨택 자동'],consult:['상담자료 생성','회원 맞춤 후킹·ESR·SSS'],guide:['매출 1000만 전략','전자책 + 인간심리'],ai:['AI 지속 컨설팅','상황별 전략 갱신']};
