@@ -133,6 +133,7 @@
   <aside class="side">
     <div class="brand"><b>스포짐 서교점</b><span>PT · 필라 통합 관리</span></div>
     <button class="nav on" data-t="dash"><span class="ic">📊</span> 트레이너 종합</button>
+    <button class="nav" data-t="plan"><span class="ic">🎯</span> 당월 매출계획</button>
     <button class="nav" data-t="recon"><span class="ic">🔄</span> 재등록 컨택</button>
     <button class="nav" data-t="input"><span class="ic">✍️</span> 매출·수업 입력</button>
     <button class="nav" data-t="member"><span class="ic">👤</span> 담당회원 특이사항</button>
@@ -169,19 +170,21 @@ const STAFF=[
   {name:'이미로',rank:'사원',base:900000,type:'필라'},
 ];
 const won=n=>Math.round(n||0).toLocaleString('ko-KR'),man=n=>Math.round((n||0)/10000).toLocaleString('ko-KR');
-let WHO='ALL', DB={sales:[],members:[],contacts:[],sessions:[]}, CUR='dash';
+let WHO='ALL', DB={sales:[],members:[],contacts:[],sessions:[],plans:[],trials:[]}, CUR='dash';
 const isMe=t=>WHO==='ALL'||t===WHO;
 const info=t=>STAFF.find(s=>s.name===t)||{base:0,type:'PT',rank:''};
 const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);};
 
 async function loadAll(){
   try{
-    const [s,m,c,se]=await Promise.all([
+    const [s,m,c,se,pl,tr]=await Promise.all([
       sb.from('pt_sales').select('*').order('id'),
       sb.from('members').select('*').order('id'),
       sb.from('contacts').select('*').order('id'),
-      sb.from('sessions').select('*').order('id')]);
-    DB.sales=s.data||[];DB.members=m.data||[];DB.contacts=c.data||[];DB.sessions=se.data||[];
+      sb.from('sessions').select('*').order('id'),
+      sb.from('plans').select('*').order('id'),
+      sb.from('trials').select('*').order('id')]);
+    DB.sales=s.data||[];DB.members=m.data||[];DB.contacts=c.data||[];DB.sessions=se.data||[];DB.plans=pl.data||[];DB.trials=tr.data||[];
   }catch(e){toast('연결 오류: '+e.message);}
 }
 // 트레이너 8월 매출(VAT제외)
@@ -189,18 +192,22 @@ const salesOf=t=>DB.sales.filter(x=>x.trainer===t).reduce((a,x)=>a+(+x.vat||0),0
 const sessOf=t=>DB.sessions.filter(x=>x.trainer===t).reduce((a,x)=>a+(+x.cnt||0),0);
 function sessionPrice(){ return +(localStorage.getItem('session_price')||50000); } // 세션단가(부가세제외)
 function setSP(v){ localStorage.setItem('session_price',Math.max(1,Math.round(+v)||50000)); render(); }
+// 회원별 실단가 반영: 수업료원천 Σ(회원단가×당월진행), 가중평균 실단가
+const feeBaseOf=t=>DB.members.filter(m=>m.trainer===t).reduce((a,m)=>a+(+m.unit||0)*(+m.done||0),0);
+const doneOf=t=>DB.members.filter(m=>m.trainer===t).reduce((a,m)=>a+(+m.done||0),0);
+const effUnitOf=t=>{const d=doneOf(t);return d>0?Math.round(feeBaseOf(t)/d):sessionPrice();}; // 회원 가중평균 실단가
 function calcPay(t){
-  const sales=salesOf(t.name),sess=sessOf(t.name);const SP=sessionPrice();let fee=0,inc=0,rl='',unit=0;
+  const sales=salesOf(t.name),sess=sessOf(t.name);const eu=effUnitOf(t.name);let fee=0,inc=0,rl='',unit=eu;
   if(t.type==='PT'){
     const b=[[10000000,.53],[9000000,.5],[8000000,.45],[7000000,.37],[5000000,.34],[3500000,.32],[0,.3]];
-    const r=b.find(x=>sales>=x[0])[1];unit=Math.round(SP*r);fee=unit*sess;rl=(r*100)+'%';
+    const r=b.find(x=>sales>=x[0])[1];unit=Math.round(eu*r);fee=Math.round(eu*r*sess);rl=(r*100)+'%';
     if(sales>=10000000)inc=Math.floor((sales-10000000)/1000000)*100000;
-  }else{ // 필라: 800↑ 세션 정액, 그 미만 세션단가×배분율
+  }else{ // 필라: 800↑ 세션 정액, 그 미만 실단가×배분율
     if(sales>=10000000){unit=33000;fee=sess*33000;rl='세션 33,000';}
     else if(sales>=8000000){unit=30000;fee=sess*30000;rl='세션 30,000';}
-    else{const b=[[5000000,.5],[3500000,.45],[0,.4]];const r=b.find(x=>sales>=x[0])[1];unit=Math.round(SP*r);fee=unit*sess;rl=(r*100)+'%';}
+    else{const b=[[5000000,.5],[3500000,.45],[0,.4]];const r=b.find(x=>sales>=x[0])[1];unit=Math.round(eu*r);fee=Math.round(eu*r*sess);rl=(r*100)+'%';}
   }
-  return {sales,sess,rl,unit,fee,inc,total:info(t.name).base+fee+inc};
+  return {sales,sess,rl,unit,fee,inc,eu,total:info(t.name).base+fee+inc};
 }
 function needNote(t){const s=150-sessOf(t.name),m=10000000-salesOf(t.name),n=[];if(s>0)n.push(`수업 ${s}개↑`);if(m>0)n.push(`매출 ${man(m)}만↑`);return n.length?n.join(' · '):'목표 달성';}
 
@@ -223,7 +230,7 @@ V.dash=()=>{
     <div class="kpi"><div class="lab">💳 급여(예상)</div><div class="val num">${man(tP)}<small>만</small></div></div>
     <div class="kpi"><div class="lab">📋 매출 건수</div><div class="val num">${DB.sales.filter(x=>isMe(x.trainer)).length}<small>건</small></div></div>
   </div>
-  <div class="card"><div class="card-h"><h2>👥 급여·목표 자동계산</h2><span class="hint">세션단가 <input type="number" value="${sessionPrice()}" onchange="setSP(this.value)" style="width:78px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:12px"> 원(VAT제외) · 수업료 = 단가 × 율 × 수업수</span></div>
+  <div class="card"><div class="card-h"><h2>👥 급여·목표 자동계산</h2><span class="hint">수업료 = 회원별 실단가 × 배분율 × 수업수 (엑셀 단가 자동반영)</span></div>
     <div class="tw"><table><thead><tr><th>트레이너</th><th>기본급</th><th>8월매출</th><th>율</th><th>수업료</th><th>인센</th><th>총급여</th><th>수업(150)</th><th>상태·분발</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="seed-note">💡 매출·수업 입력 탭에서 데이터를 넣으면 여기 실시간 반영됩니다.</div></div>`;
 };
@@ -367,6 +374,85 @@ V.ai=()=>{
   o+=`\n\n📌 실행 우선순위\n   1) 오늘 — 잔여 3회↓ ${urgent.length}명 즉시 클로징 (운동 직후 감정 피크에서)\n   2) 이번 주 — 잔여 10회↓ 전원 "🧠 전략"의 명분으로 다음 목표 상담\n   3) 상시 — 변화 큰 회원에게 소개 요청 (자기 변화 인지한 순간)`;
   return `<div class="ai-note">🤖 <b>${t.name} ${t.rank} 맞춤 컨설팅</b> — 매출·수업·급여 + <b>담당회원 특이사항·심리</b>까지 반영한 실전 액션플랜. (회원별 상세는 <b>담당회원 탭 🧠 전략</b>)</div>
     <div class="card"><div class="ai-out">${o}</div></div>`;
+};
+
+// ===== 당월 매출계획 대시보드 =====
+function planCat(st){ st=(st||'').replace(/\s/g,'');
+  if(/결제완료|등록완료|완료|등록됨/.test(st)) return {k:'확정',p:1,c:'var(--good)'};
+  if(/결제예정/.test(st)) return {k:'유력',p:.9,c:'#22a06b'};
+  if(/컨택예정|답변예정|예정|상담|연락/.test(st)) return {k:'예상',p:.5,c:'var(--warn)'};
+  if(/미등록|실패|취소|거절/.test(st)) return {k:'실패',p:0,c:'var(--crit)'};
+  return {k:'미정',p:.3,c:'var(--ink-3)'};
+}
+function abilities(name){
+  const t=STAFF.find(s=>s.name===name); const p=calcPay(t);
+  const 매출력=Math.min(100,Math.round(p.sales/10000000*100));
+  const 수업력=Math.min(100,Math.round(p.sess/150*100));
+  const plOf=DB.plans.filter(x=>x.trainer===name), plamt=plOf.reduce((a,x)=>a+(+x.amount||0),0);
+  const conf=plOf.filter(x=>planCat(x.status).k==='확정').reduce((a,x)=>a+(+x.amount||0),0);
+  const 계획실행력=plamt>0?Math.round(conf/plamt*100):0;
+  const trOf=DB.trials.filter(x=>x.trainer===name);
+  const 전환력=trOf.length?Math.round(trOf.filter(x=>x.reg).length/trOf.length*100):0;
+  const reReg=plOf.filter(x=>/재등록/.test(x.type||''));
+  const 재등록력=reReg.length?Math.round(reReg.filter(x=>planCat(x.status).p>=.9).length/reReg.length*100):(DB.members.filter(m=>m.trainer===name&&m.remain>0&&m.remain<10).length?40:60);
+  return [['매출력',매출력],['수업력',수업력],['계획실행력',계획실행력],['체험전환력',전환력],['재등록력',재등록력]];
+}
+const FIXTIP={'매출력':'재등록·소개 파이프를 두껍게. 운동 직후 당일등록 클로징을 강화하세요.','수업력':'빈 스케줄을 채우고 OT·체험 전환으로 신규 세션을 확보하세요.','계획실행력':'계획만 세우고 방치 X. "컨택 예정" 건을 오늘 바로 실행으로 옮기세요.','체험전환력':'체험 상담 스크립트를 개선하고, 운동 직후 감정 피크에서 클로징하세요.','재등록력':'잔여 10회부터 다음 목표를 심고, 손실회피 명분으로 재등록을 설계하세요.'};
+function bar(label,val,color){ return `<div style="display:flex;align-items:center;gap:9px;margin:6px 0;font-size:12.5px"><span style="width:74px;color:var(--ink-2)">${label}</span><span class="bar" style="flex:1"><i style="width:${val}%;background:${color||'var(--navy)'}"></i></span><b style="width:34px;text-align:right;font-variant-numeric:tabular-nums">${val}</b></div>`; }
+V.plan=()=>{
+  const pl=DB.plans.filter(p=>isMe(p.trainer)), tr=DB.trials.filter(t=>isMe(t.trainer));
+  const scope=WHO==='ALL'?'서교점 전체':WHO+' 담당';
+  if(!pl.length&&!tr.length) return `<div class="ai-note">🎯 <b>당월 매출계획</b> — 아직 데이터가 없습니다. 엑셀 시드가 반영되면 계획·예상·확정 매출과 채널 등록률이 표시됩니다.</div>`;
+  // 매출 3종
+  let plan=0,expect=0,confirm=0; const cat={확정:{n:0,a:0},유력:{n:0,a:0},예상:{n:0,a:0},실패:{n:0,a:0},미정:{n:0,a:0}};
+  pl.forEach(p=>{const c=planCat(p.status),a=+p.amount||0; plan+=a; expect+=a*c.p; if(c.k==='확정')confirm+=a; cat[c.k].n++; cat[c.k].a+=a;});
+  expect=Math.round(expect);
+  const target=WHO==='ALL'?80000000:10000000, gap=Math.max(0,target-confirm), expGap=Math.max(0,target-expect);
+  // 파이프라인 스택 막대 (계획 총액 대비)
+  const seg=(k,col)=>plan>0?`<div title="${k} ${man(cat[k].a)}만" style="width:${cat[k].a/plan*100}%;background:${col};height:100%"></div>`:'';
+  // 유형별
+  const byType={}; pl.forEach(p=>{const ty=(p.type||'기타').toUpperCase().replace('VIP','VIP').replace('당근','당근'); const b=byType[ty]=byType[ty]||{n:0,a:0,c:0}; b.n++; b.a+=+p.amount||0; if(planCat(p.status).k==='확정')b.c+=+p.amount||0;});
+  const typeRows=Object.entries(byType).sort((a,b)=>b[1].a-a[1].a).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}건</td><td class="num">${man(v.a)}만</td><td class="num" style="color:var(--good);font-weight:700">${man(v.c)}만</td><td class="num">${v.a?Math.round(v.c/v.a*100):0}%</td></tr>`).join('');
+  const bestType=Object.entries(byType).sort((a,b)=>b[1].c-a[1].c)[0], weakType=Object.entries(byType).filter(x=>x[1].a>0).sort((a,b)=>(a[1].c/a[1].a)-(b[1].c/b[1].a))[0];
+  // 채널 등록률
+  const bySrc={}; tr.forEach(t=>{const b=bySrc[t.source]=bySrc[t.source]||{n:0,reg:0,fail:0,hold:0}; b.n++; const st=t.status||''; if(t.reg)b.reg++; else if(/실패/.test(st))b.fail++; else if(/보류/.test(st))b.hold++;});
+  const srcRows=Object.entries(bySrc).map(([k,v])=>{const rate=v.n?Math.round(v.reg/v.n*100):0; const mi=v.n-v.reg-v.fail-v.hold; return `<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good);font-weight:700">${v.reg}</td><td class="num" style="color:var(--crit)">${v.fail||'—'}</td><td class="num" style="color:var(--warn)">${v.hold||'—'}</td><td class="num" style="color:var(--ink-3)">${mi||'—'}</td><td class="num" style="width:130px"><span class="bar"><i style="width:${rate}%;background:${rate>=50?'var(--good)':rate>=30?'var(--warn)':'var(--crit)'}"></i></span> ${rate}%</td></tr>`;}).join('');
+  // KPI
+  const regTot=tr.length, regOk=tr.filter(t=>t.reg).length, regRate=regTot?Math.round(regOk/regTot*100):0;
+  // 능력 진단
+  let ability;
+  if(WHO==='ALL'){
+    ability=`<div class="tw"><table><thead><tr><th>트레이너</th><th>매출력</th><th>수업력</th><th>계획실행</th><th>체험전환</th><th>재등록</th><th>종합</th></tr></thead><tbody>`+
+      STAFF.map(t=>{const ab=abilities(t.name),avg=Math.round(ab.reduce((a,x)=>a+x[1],0)/ab.length); const cell=v=>`<td class="num" style="color:${v>=70?'var(--good)':v>=40?'var(--warn)':'var(--crit)'};font-weight:600">${v}</td>`; return `<tr><td><span class="name">${t.name}</span></td>${ab.map(x=>cell(x[1])).join('')}<td class="num" style="font-weight:800">${avg}</td></tr>`;}).join('')+
+      `</tbody></table></div><div class="seed-note">💡 개인 트레이너를 우측 상단에서 선택하면 장점·단점·보완점이 상세히 나옵니다.</div>`;
+  } else {
+    const ab=abilities(WHO), sorted=[...ab].sort((a,b)=>b[1]-a[1]); const best=sorted[0], worst=sorted[sorted.length-1];
+    ability=`${ab.map(x=>bar(x[0],x[1],x[1]>=70?'var(--good)':x[1]>=40?'var(--warn)':'var(--crit)')).join('')}
+      <div class="guide" style="margin-top:10px"><div class="box" style="border-left-color:var(--good);margin:6px 0"><b>💪 강점</b> — ${best[0]} (${best[1]}점). 이 강점을 계속 무기로 쓰세요.</div>
+      <div class="box" style="border-left-color:var(--crit);margin:6px 0"><b>⚠️ 약점</b> — ${worst[0]} (${worst[1]}점).</div>
+      <div class="box" style="border-left-color:var(--navy);margin:6px 0"><b>🔧 보완</b> — ${FIXTIP[worst[0]]}</div></div>`;
+  }
+  return `<div class="ai-note">🎯 <b>${scope} · 8월 매출계획</b> — 막연하게 X, 계획·예상·확정을 숫자로. 부족분과 강·약점이 한눈에.</div>
+  <div class="kpis">
+    <div class="kpi"><div class="lab">📋 계획매출</div><div class="val num">${man(plan)}<small>만</small></div><div class="foot">올린 계획 ${pl.length}건</div></div>
+    <div class="kpi accent"><div class="lab">📈 예상매출<span style="font-size:10px">(확률가중)</span></div><div class="val num">${man(expect)}<small>만</small></div><div class="foot">목표 ${man(target)}만</div></div>
+    <div class="kpi"><div class="lab">✅ 확정매출</div><div class="val num" style="color:var(--good)">${man(confirm)}<small>만</small></div><div class="foot">결제완료</div></div>
+    <div class="kpi"><div class="lab">🎯 체험 등록률</div><div class="val num">${regRate}<small>%</small></div><div class="foot">${regOk}/${regTot}건</div></div>
+  </div>
+  <div class="card"><div class="card-h"><h2>💰 매출 파이프라인</h2><span class="hint">계획 ${man(plan)}만 → 예상 ${man(expect)}만 → 확정 ${man(confirm)}만</span></div>
+    <div style="padding:6px 20px 4px"><div style="display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--line)">${seg('확정','var(--good)')}${seg('유력','#22a06b')}${seg('예상','var(--warn)')}${seg('미정','var(--ink-3)')}${seg('실패','var(--crit)')}</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin:9px 0 4px;font-size:12px;color:var(--ink-2)">
+      <span>🟢 확정 ${cat.확정.n}건 ${man(cat.확정.a)}만</span><span>🟩 유력 ${cat.유력.n}건 ${man(cat.유력.a)}만</span><span>🟡 예상 ${cat.예상.n}건 ${man(cat.예상.a)}만</span><span>⬜ 미정 ${cat.미정.n}건</span><span>🔴 실패 ${cat.실패.n}건 ${man(cat.실패.a)}만</span></div></div>
+    <div class="ai-out" style="margin:8px 20px 16px">📊 목표까지 <b>${man(gap)}만</b> 부족 (확정 기준).
+${expect>=target?'👍 예상매출이 목표를 이미 넘습니다. "컨택 예정"을 확정으로 클로징하면 초과 달성!':'📈 예상매출로도 '+man(expGap)+'만 부족 — 컨택 예정 건 클로징 + 신규 계획 추가가 필요합니다.'}
+${bestType?'🔥 강점 분야: '+bestType[0]+' (확정 '+man(bestType[1].c)+'만)':''}${weakType&&weakType[0]!==(bestType&&bestType[0])?'  /  ⚠️ 저조 분야: '+weakType[0]+' (계획 '+man(weakType[1].a)+'만 중 확정 '+man(weakType[1].c)+'만)':''}</div></div>
+  <div class="card"><div class="card-h"><h2>🧩 유형별 매출계획</h2><span class="hint">신규·재등록·소개·VIP·당근</span></div>
+    <div class="tw"><table><thead><tr><th>유형</th><th>건수</th><th>계획액</th><th>확정액</th><th>확정률</th></tr></thead><tbody>${typeRows||'<tr><td colspan=5 style="padding:16px;color:var(--ink-3)">계획 없음</td></tr>'}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>📞 채널별 체험 → 등록률</h2><span class="hint">진행·등록·실패·보류(지속관리)·미정</span></div>
+    <div class="tw"><table><thead><tr><th>채널</th><th>진행</th><th>등록</th><th>실패</th><th>보류</th><th>미정</th><th>등록률</th></tr></thead><tbody>${srcRows||'<tr><td colspan=7 style="padding:16px;color:var(--ink-3)">체험 데이터 없음</td></tr>'}</tbody></table></div>
+    <div class="seed-note">💡 미정·보류 건은 재등록 컨택·체험 관리 탭에서 상태를 업데이트하면 등록률이 정확해집니다.</div></div>
+  <div class="card"><div class="card-h"><h2>📈 능력 진단 ${WHO==='ALL'?'(팀 전체)':'· '+WHO}</h2><span class="hint">매출·수업·계획실행·체험전환·재등록</span></div>
+    <div style="padding:6px 20px 16px">${ability}</div></div>`;
 };
 
 // ===== DB 저장 함수 =====
@@ -565,7 +651,7 @@ function showStrategy(id){
 }
 function cpy(id){const el=document.getElementById(id);el.select();try{navigator.clipboard.writeText(el.value);}catch(e){try{document.execCommand('copy');}catch(_){}}toast('복사됨 ✅');}
 
-const titles={dash:['트레이너 종합','2026년 8월 · VAT제외 · 목표 수업150/매출1,000만'],recon:['재등록 컨택','잔여 10회 미만 자동 + 직접 추가'],input:['매출·수업 입력','저장하면 대시보드 실시간 반영'],member:['담당회원 특이사항','트레이너 입력 → 잔여10회↓ 컨택 자동'],consult:['상담자료 생성','회원 맞춤 후킹·ESR·SSS'],guide:['매출 1000만 전략','전자책 + 인간심리'],ai:['AI 지속 컨설팅','상황별 전략 갱신']};
+const titles={dash:['트레이너 종합','2026년 8월 · VAT제외 · 목표 수업150/매출1,000만'],plan:['당월 매출계획','계획·예상·확정 매출 + 채널 등록률 + 능력 진단'],recon:['재등록 컨택','잔여 10회 미만 자동 + 직접 추가'],input:['매출·수업 입력','저장하면 대시보드 실시간 반영'],member:['담당회원 특이사항','트레이너 입력 → 잔여10회↓ 컨택 자동'],consult:['상담자료 생성','회원 맞춤 후킹·ESR·SSS'],guide:['매출 1000만 전략','전자책 + 인간심리'],ai:['AI 지속 컨설팅','상황별 전략 갱신']};
 function render(){document.getElementById('ttl').textContent=titles[CUR][0];document.getElementById('sub').textContent=titles[CUR][1];document.getElementById('view').innerHTML=V[CUR]();window.scrollTo(0,0);}
 function go(t){CUR=t;document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('on',n.dataset.t===t));render();}
 document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>go(n.dataset.t));
