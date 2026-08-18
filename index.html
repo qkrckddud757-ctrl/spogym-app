@@ -145,6 +145,7 @@
     <button class="nav" data-t="recon"><span class="ic">🔄</span> 재등록 컨택</button>
     <button class="nav" data-t="ot"><span class="ic">🆕</span> 신규 OT</button>
     <button class="nav" data-t="trial"><span class="ic">🎟️</span> 체험 관리</button>
+    <button class="nav" data-t="trend"><span class="ic">📈</span> 월별 트렌드</button>
     <button class="nav" data-t="input"><span class="ic">✍️</span> 매출·수업 입력</button>
     <button class="nav" data-t="member"><span class="ic">👤</span> 담당회원 특이사항</button>
     <button class="nav" data-t="consult"><span class="ic">🎨</span> 상담자료 생성</button>
@@ -180,21 +181,22 @@ const STAFF=[
   {name:'이미로',rank:'사원',base:900000,type:'필라'},
 ];
 const won=n=>Math.round(n||0).toLocaleString('ko-KR'),man=n=>Math.round((n||0)/10000).toLocaleString('ko-KR');
-let WHO='ALL', DB={sales:[],members:[],contacts:[],sessions:[],plans:[],trials:[]}, CUR='dash';
+let WHO='ALL', DB={sales:[],members:[],contacts:[],sessions:[],plans:[],trials:[],stats:[]}, CUR='dash';
 const isMe=t=>WHO==='ALL'||t===WHO;
 const info=t=>STAFF.find(s=>s.name===t)||{base:0,type:'PT',rank:''};
 const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);};
 
 async function loadAll(){
   try{
-    const [s,m,c,se,pl,tr]=await Promise.all([
+    const [s,m,c,se,pl,tr,st]=await Promise.all([
       sb.from('pt_sales').select('*').order('id'),
       sb.from('members').select('*').order('id'),
       sb.from('contacts').select('*').order('id'),
       sb.from('sessions').select('*').order('id'),
       sb.from('plans').select('*').order('id'),
-      sb.from('trials').select('*').order('id')]);
-    DB.sales=s.data||[];DB.members=m.data||[];DB.contacts=c.data||[];DB.sessions=se.data||[];DB.plans=pl.data||[];DB.trials=tr.data||[];
+      sb.from('trials').select('*').order('id'),
+      sb.from('monthly_stats').select('*').order('month')]);
+    DB.sales=s.data||[];DB.members=m.data||[];DB.contacts=c.data||[];DB.sessions=se.data||[];DB.plans=pl.data||[];DB.trials=tr.data||[];DB.stats=st.data||[];
   }catch(e){toast('연결 오류: '+e.message);}
 }
 // 트레이너 8월 매출(VAT제외)
@@ -404,7 +406,8 @@ function abilities(name){
   const conf=plOf.filter(x=>planCat(x.status).k==='확정').reduce((a,x)=>a+(+x.amount||0),0);
   const 계획실행력=plamt>0?Math.round(conf/plamt*100):0;
   const trOf=DB.trials.filter(x=>x.trainer===name);
-  const 전환력=trOf.length?Math.round(trOf.filter(x=>x.reg).length/trOf.length*100):0;
+  const trDec=trOf.filter(x=>['등록','미등록','거부','연기','부재'].includes(x.real_status));
+  const 전환력=trDec.length?Math.round(trDec.filter(x=>x.real_status==='등록').length/trDec.length*100):0;
   const reReg=plOf.filter(x=>/재등록/.test(x.type||''));
   const 재등록력=reReg.length?Math.round(reReg.filter(x=>planCat(x.status).p>=.9).length/reReg.length*100):(DB.members.filter(m=>m.trainer===name&&m.remain>0&&m.remain<10).length?40:60);
   return [['매출력',매출력],['수업력',수업력],['계획실행력',계획실행력],['체험전환력',전환력],['재등록력',재등록력]];
@@ -426,11 +429,8 @@ V.plan=()=>{
   const byType={}; pl.forEach(p=>{const ty=(p.type||'기타').toUpperCase().replace('VIP','VIP').replace('당근','당근'); const b=byType[ty]=byType[ty]||{n:0,a:0,c:0}; b.n++; b.a+=+p.amount||0; if(planCat(p.status).k==='확정')b.c+=+p.amount||0;});
   const typeRows=Object.entries(byType).sort((a,b)=>b[1].a-a[1].a).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}건</td><td class="num">${man(v.a)}만</td><td class="num" style="color:var(--good);font-weight:700">${man(v.c)}만</td><td class="num">${v.a?Math.round(v.c/v.a*100):0}%</td></tr>`).join('');
   const bestType=Object.entries(byType).sort((a,b)=>b[1].c-a[1].c)[0], weakType=Object.entries(byType).filter(x=>x[1].a>0).sort((a,b)=>(a[1].c/a[1].a)-(b[1].c/b[1].a))[0];
-  // 채널 등록률
-  const bySrc={}; tr.forEach(t=>{const b=bySrc[t.source]=bySrc[t.source]||{n:0,reg:0,fail:0,hold:0}; b.n++; const st=t.status||''; if(t.reg)b.reg++; else if(/실패/.test(st))b.fail++; else if(/보류/.test(st))b.hold++;});
-  const srcRows=Object.entries(bySrc).map(([k,v])=>{const rate=v.n?Math.round(v.reg/v.n*100):0; const mi=v.n-v.reg-v.fail-v.hold; return `<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good);font-weight:700">${v.reg}</td><td class="num" style="color:var(--crit)">${v.fail||'—'}</td><td class="num" style="color:var(--warn)">${v.hold||'—'}</td><td class="num" style="color:var(--ink-3)">${mi||'—'}</td><td class="num" style="width:130px"><span class="bar"><i style="width:${rate}%;background:${rate>=50?'var(--good)':rate>=30?'var(--warn)':'var(--crit)'}"></i></span> ${rate}%</td></tr>`;}).join('');
-  // KPI
-  const otA=tr.filter(t=>t.source==='신규OT'), otReg=otA.filter(t=>t.reg).length, otRate=otA.length?Math.round(otReg/otA.length*100):0;
+  // KPI — OT 등록률(결론난 건 기준, 진행중 제외)
+  const otA=tr.filter(t=>t.source==='신규OT'), otDec=otA.filter(t=>['등록','미등록','거부','연기','부재'].includes(t.real_status)), otReg=otA.filter(t=>t.real_status==='등록').length, otRate=otDec.length?Math.round(otReg/otDec.length*100):0;
   // 능력 진단
   let ability;
   if(WHO==='ALL'){
@@ -449,7 +449,7 @@ V.plan=()=>{
     <div class="kpi"><div class="lab">📋 계획매출</div><div class="val num">${man(plan)}<small>만</small></div><div class="foot">올린 계획 ${pl.length}건</div></div>
     <div class="kpi accent"><div class="lab">📈 예상매출<span style="font-size:10px">(확률가중)</span></div><div class="val num">${man(expect)}<small>만</small></div><div class="foot">목표 ${man(target)}만</div></div>
     <div class="kpi"><div class="lab">✅ 확정매출</div><div class="val num" style="color:var(--good)">${man(confirm)}<small>만</small></div><div class="foot">결제완료</div></div>
-    <div class="kpi"><div class="lab">🆕 OT 전환율</div><div class="val num">${otRate}<small>%</small></div><div class="foot">${otReg}/${otA.length}건</div></div>
+    <div class="kpi"><div class="lab">🆕 OT 등록률<span style="font-size:9px">(결론난건)</span></div><div class="val num">${otRate}<small>%</small></div><div class="foot">${otReg}/${otDec.length}건 · 배정${otA.length}</div></div>
   </div>
   <div class="card"><div class="card-h"><h2>💰 매출 파이프라인</h2><span class="hint">계획 ${man(plan)}만 → 예상 ${man(expect)}만 → 확정 ${man(confirm)}만</span></div>
     <div style="padding:6px 20px 4px"><div style="display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--line)">${seg('확정','var(--good)')}${seg('유력','#22a06b')}${seg('예상','var(--warn)')}${seg('미정','var(--ink-3)')}${seg('실패','var(--crit)')}</div>
@@ -477,40 +477,86 @@ ${bestType?'🔥 강점 분야: '+bestType[0]+' (확정 '+man(bestType[1].c)+'�
       <button class="act" onclick="delPlan(${p.id})">삭제</button></div>`;}).join('')||'<div class="seed-note" style="padding:12px 20px">아직 등록한 계획이 없습니다. 위에서 추가하세요.</div>'}</div></div>`}`;
 };
 
-// ===== 신규 OT 관리 =====
-function trialTagBtns(id){ return `<div style="display:flex;gap:4px"><button class="act" style="background:var(--good);color:#fff;border-color:var(--good)" onclick="setTrial(${id},'등록')">등록</button><button class="act" style="background:var(--crit);color:#fff;border-color:var(--crit)" onclick="setTrial(${id},'실패')">실패</button><button class="act" style="background:var(--warn);color:#fff;border-color:var(--warn)" onclick="setTrial(${id},'보류')">보류</button></div>`; }
+// ===== 신규 OT 관리 (엑셀 실제상태[22]열 기준: 등록/미등록/진행중/보류/연기/부재/거부) =====
+const ST_COLOR={등록:'var(--good)',미등록:'var(--crit)',거부:'var(--crit)',진행중:'var(--warn)',보류:'var(--warn)',연기:'var(--ink-3)',부재:'var(--ink-3)',미기재:'var(--ink-3)'};
+function trialTagBtns(id){ return `<div style="display:flex;gap:4px;flex-wrap:wrap;max-width:150px">${['등록','미등록','거부','진행중','보류','연기'].map(s=>`<button class="act" style="font-size:10.5px;padding:5px 8px;background:${ST_COLOR[s]};color:#fff;border-color:${ST_COLOR[s]}" onclick="setTrial(${id},'${s}')">${s}</button>`).join('')}</div>`; }
 V.ot=()=>{
   const ot=DB.trials.filter(t=>t.source==='신규OT'&&isMe(t.trainer));
-  const n=ot.length, reg=ot.filter(t=>t.reg).length, rate=n?Math.round(reg/n*100):0;
-  const amt=ot.filter(t=>t.reg).reduce((a,t)=>a+(+t.amount||0),0);
-  const by={}; ot.forEach(t=>{const tr=t.trainer||'(미배정)';const b=by[tr]=by[tr]||{n:0,reg:0,amt:0};b.n++;if(t.reg){b.reg++;b.amt+=+t.amount||0;}});
-  const trRows=Object.entries(by).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good);font-weight:700">${v.reg}</td><td class="num">${v.n?Math.round(v.reg/v.n*100):0}%</td><td class="num">${man(v.amt)}만</td></tr>`).join('');
-  const list=ot.map(t=>`<div class="contact"><div class="ring" style="background:${t.reg?'var(--good)':t.status==='실패'?'var(--crit)':t.status==='보류'?'var(--warn)':'var(--ink-3)'}">${esc((t.member||'?').slice(0,1))}</div>
-    <div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.trainer||'미배정'}${t.amount?' · 결제 '+man(t.amount)+'만':''}</span>
-    <div class="meta">${t.reg?'✅ 등록 완료':(t.status&&t.status!=='미정')?t.status:'⬜ 미정 — 상태 선택'}</div></div>
+  const n=ot.length, reg=ot.filter(t=>t.real_status==='등록').length;
+  const decided=ot.filter(t=>['등록','미등록','거부','연기','부재'].includes(t.real_status)).length; // 결론난 건
+  const pending=ot.filter(t=>t.real_status==='진행중').length;
+  const rate=decided?Math.round(reg/decided*100):0;
+  const amt=ot.filter(t=>t.real_status==='등록').reduce((a,t)=>a+(+t.amount||0),0);
+  const by={}; ot.forEach(t=>{const tr=t.trainer||'(미배정)';const b=by[tr]=by[tr]||{n:0,reg:0,dec:0,amt:0};b.n++;if(t.real_status==='등록'){b.reg++;b.amt+=+t.amount||0;}if(['등록','미등록','거부','연기','부재'].includes(t.real_status))b.dec++;});
+  const trRows=Object.entries(by).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good);font-weight:700">${v.reg}</td><td class="num">${v.dec?Math.round(v.reg/v.dec*100):'—'}${v.dec?'%':''}</td><td class="num">${man(v.amt)}만</td></tr>`).join('');
+  const byCh={}; ot.forEach(t=>{const c=t.channel||'신규';byCh[c]=(byCh[c]||0)+1;});
+  const chBadges=Object.entries(byCh).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="pill" style="background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);font-size:11px">${k} ${v}건</span>`).join(' ');
+  const list=ot.slice().sort((a,b)=>(a.real_status==='진행중')-(b.real_status==='진행중')).map(t=>`<div class="contact"><div class="ring" style="background:${ST_COLOR[t.real_status]||'var(--ink-3)'}">${esc((t.member||'?').slice(0,1))}</div>
+    <div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.trainer||'미배정'} · ${t.channel||'신규'}${t.amount?' · 예상 '+man(t.amount)+'만':''}</span>
+    <div class="meta">현재 상태: <b style="color:${ST_COLOR[t.real_status]||'var(--ink-2)'}">${t.real_status||'미기재'}</b></div></div>
     ${trialTagBtns(t.id)}</div>`).join('');
-  return `<div class="ai-note">🆕 <b>신규 OT (8월)</b> — OT 상담 후 <b>결제(등록)</b>까지 전환율. 담당 트레이너 기준. 미정 건은 등록·실패·보류로 태깅하세요.</div>
+  return `<div class="ai-note">🆕 <b>신규 OT (8월)</b> — 엑셀 실제상태(등록/미등록/진행중/보류/연기/부재/거부) 그대로 반영. <b>결제금액은 예상액</b>일 뿐 등록 확정이 아닙니다 — 상태가 "등록"인 것만 등록으로 집계.</div>
   <div class="kpis">
-    <div class="kpi"><div class="lab">🆕 OT 진행</div><div class="val num">${n}<small>건</small></div></div>
-    <div class="kpi accent"><div class="lab">✅ 등록</div><div class="val num">${reg}<small>건</small></div></div>
-    <div class="kpi"><div class="lab">📈 전환율</div><div class="val num">${rate}<small>%</small></div></div>
+    <div class="kpi"><div class="lab">🆕 OT 배정</div><div class="val num">${n}<small>건</small></div><div class="foot">채널: ${chBadges}</div></div>
+    <div class="kpi accent"><div class="lab">✅ 등록 확정</div><div class="val num">${reg}<small>건</small></div></div>
+    <div class="kpi"><div class="lab">📈 등록률<span style="font-size:10px">(결론난 건 기준)</span></div><div class="val num">${rate}<small>%</small></div><div class="foot">${reg}/${decided}건 (진행중 ${pending}건 제외)</div></div>
     <div class="kpi"><div class="lab">💰 등록매출</div><div class="val num">${man(amt)}<small>만</small></div></div>
   </div>
-  <div class="card"><div class="card-h"><h2>트레이너별 OT 전환</h2><span class="hint">진행 대비 등록</span></div><div class="tw"><table><thead><tr><th>담당</th><th>진행</th><th>등록</th><th>전환율</th><th>등록매출</th></tr></thead><tbody>${trRows||'<tr><td colspan=5 style="padding:16px;color:var(--ink-3)">데이터 없음</td></tr>'}</tbody></table></div></div>
-  <div class="card"><div class="card-h"><h2>OT 명단 · 상태 태깅 (${ot.length}건)</h2><span class="hint">결제=등록 자동 / 나머지 태깅</span></div><div>${list||'<p style="padding:18px;color:var(--ink-3)">이번달 신규 OT가 없습니다.</p>'}</div></div>`;
+  <div class="card"><div class="card-h"><h2>트레이너별 OT 등록률</h2><span class="hint">진행중 제외한 결론난 건 기준</span></div><div class="tw"><table><thead><tr><th>담당</th><th>배정</th><th>등록</th><th>등록률</th><th>등록매출</th></tr></thead><tbody>${trRows||'<tr><td colspan=5 style="padding:16px;color:var(--ink-3)">데이터 없음</td></tr>'}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>OT 명단 · 상태 태깅 (${ot.length}건)</h2><span class="hint">진행중 건 위로 정렬 — 아래서 상태 업데이트</span></div><div>${list||'<p style="padding:18px;color:var(--ink-3)">이번달 신규 OT가 없습니다.</p>'}</div></div>`;
 };
-// ===== 체험 관리 =====
+// ===== 체험 관리 (당근 등 — 신규OT 총계에 이미 포함된 채널 필터 뷰, 별도 카운트 아님) =====
 V.trial=()=>{
-  const tr=DB.trials.filter(t=>/체험/.test(t.source)&&isMe(t.trainer));
-  const bySrc={}; tr.forEach(t=>{const b=bySrc[t.source]=bySrc[t.source]||{n:0,reg:0,fail:0,hold:0};b.n++;if(t.reg)b.reg++;else if(t.status==='실패')b.fail++;else if(t.status==='보류')b.hold++;});
-  const srcRows=Object.entries(bySrc).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good)">${v.reg}</td><td class="num" style="color:var(--crit)">${v.fail||'—'}</td><td class="num" style="color:var(--warn)">${v.hold||'—'}</td><td class="num">${v.n?Math.round(v.reg/v.n*100):0}%</td></tr>`).join('');
-  const list=tr.map(t=>`<div class="contact"><div class="ring" style="background:${t.reg?'var(--good)':t.status==='실패'?'var(--crit)':t.status==='보류'?'var(--warn)':'var(--ink-3)'}">${esc((t.member||'?').slice(0,1))}</div>
-    <div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.source}${t.trainer?' · '+t.trainer:''}</span><div class="meta">상태: ${t.status||'미정'}</div></div>
+  const all=DB.trials.filter(t=>isMe(t.trainer));
+  const tr=all.filter(t=>t.channel&&t.channel!=='신규');
+  const byCh={}; tr.forEach(t=>{const b=byCh[t.channel]=byCh[t.channel]||{n:0,reg:0,dec:0};b.n++;if(t.real_status==='등록')b.reg++;if(['등록','미등록','거부','연기','부재'].includes(t.real_status))b.dec++;});
+  const chRows=Object.entries(byCh).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good)">${v.reg}</td><td class="num">${v.dec?Math.round(v.reg/v.dec*100)+'%':'—'}</td></tr>`).join('');
+  const list=tr.map(t=>`<div class="contact"><div class="ring" style="background:${ST_COLOR[t.real_status]||'var(--ink-3)'}">${esc((t.member||'?').slice(0,1))}</div>
+    <div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.channel} · ${t.trainer||''}</span><div class="meta">상태: <b style="color:${ST_COLOR[t.real_status]||'var(--ink-2)'}">${t.real_status||'미기재'}</b></div></div>
     ${trialTagBtns(t.id)}</div>`).join('');
-  return `<div class="ai-note">🎟️ <b>체험 관리 (8월)</b> — 당근·테라피 등 무료체험 → 등록 전환. <b>작년·지난달 데이터는 자동 제외</b>. 체험 진행·결과를 태깅하세요.</div>
-  <div class="card"><div class="card-h"><h2>채널별 체험 전환</h2><span class="hint">이번달만</span></div><div class="tw"><table><thead><tr><th>채널</th><th>진행</th><th>등록</th><th>실패</th><th>보류</th><th>전환율</th></tr></thead><tbody>${srcRows||'<tr><td colspan=6 style="padding:16px;color:var(--ink-3)">이번달 체험 없음</td></tr>'}</tbody></table></div></div>
-  <div class="card"><div class="card-h"><h2>체험 명단 · 상태 태깅 (${tr.length}건)</h2></div><div>${list||'<p style="padding:18px;color:var(--ink-3)">이번달 체험이 없습니다.</p>'}</div>
-  <div class="seed-note">💡 체험 후 등록되면 [등록], 안 되면 [실패], 나중 재컨택이면 [보류]. 전환율에 즉시 반영됩니다.</div></div>`;
+  return `<div class="ai-note">🎟️ <b>체험 관리 (8월)</b> — 당근 등 <b>OT 외 유입 채널</b>만 모아보는 화면입니다. ⚠️ 이 건들은 <b>신규 OT 탭 집계에 이미 포함</b>되어 있어요 (별도 채널 구분 명단은 실제로 없고, OT 마스터 명단 안에 채널 태그로 기록됨 — 중복 집계 방지를 위해 별도로 더하지 않습니다).</div>
+  <div class="card"><div class="card-h"><h2>채널별 등록률</h2><span class="hint">신규OT 탭 총계의 부분집합</span></div><div class="tw"><table><thead><tr><th>채널</th><th>건수</th><th>등록</th><th>등록률</th></tr></thead><tbody>${chRows||'<tr><td colspan=4 style="padding:16px;color:var(--ink-3)">이번달 당근 등 체험 유입 없음</td></tr>'}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>명단 · 상태 태깅 (${tr.length}건)</h2></div><div>${list||'<p style="padding:18px;color:var(--ink-3)">이번달 체험 유입이 없습니다.</p>'}</div>
+  <div class="seed-note">💡 테라피 체험은 이번달 데이터가 없습니다(빈 명단). 다음 시드부터 자동 반영됩니다.</div></div>`;
+};
+
+// ===== 월별 트렌드 (매달 시드할 때마다 monthly_stats에 누적 — 지난달은 지우지 않고 그대로 보존) =====
+V.trend=()=>{
+  const rows=DB.stats.filter(x=>isMe(x.trainer));
+  if(!rows.length) return `<div class="ai-note">📈 <b>월별 트렌드</b> — 아직 쌓인 데이터가 없습니다. 매달 시드를 실행하면 이번달 실적이 한 줄씩 추가되어, 다음달부터 추이가 보입니다.</div>`;
+  const months=[...new Set(rows.map(x=>x.month))].sort();
+  if(WHO==='ALL'){
+    // 팀 전체: 트레이너 x 최신월 요약 + 월 목록
+    const latest=months[months.length-1];
+    const cur=rows.filter(x=>x.month===latest);
+    const body=STAFF.map(t=>{const r=cur.find(x=>x.trainer===t.name); if(!r)return '';
+      const otRate=r.ot_n?Math.round(r.ot_reg/r.ot_n*100):0;
+      return `<tr><td><b>${t.name}</b></td><td class="num">${man(r.sales)}만</td><td class="num">${r.sess}</td><td class="num">${r.ot_n}건</td><td class="num" style="color:var(--good)">${r.ot_reg}건</td><td class="num">${otRate}%</td></tr>`;}).join('');
+    return `<div class="ai-note">📈 <b>월별 트렌드 (팀 전체)</b> — 현재 누적 월: <b>${months.join(', ')}</b>. 매달 시드마다 한 달씩 쌓입니다. 트레이너를 선택하면 개인 추이 그래프가 보여요.</div>
+    <div class="card"><div class="card-h"><h2>${latest} 팀 스냅샷</h2><span class="hint">최신월 기준</span></div>
+    <div class="tw"><table><thead><tr><th>트레이너</th><th>매출</th><th>수업</th><th>OT배정</th><th>OT등록</th><th>등록률</th></tr></thead><tbody>${body}</tbody></table></div></div>
+    <div class="seed-note">💡 데이터가 2개월 이상 쌓이면 여기에 트레이너별 월간 추이(매출·수업·등록률 변화)가 자동으로 그래프로 표시됩니다.</div>`;
+  }
+  const mine=rows.filter(x=>x.trainer===WHO).sort((a,b)=>a.month.localeCompare(b.month));
+  const max=Math.max(...mine.map(x=>x.sales),1);
+  const bars=mine.map(r=>{const h=Math.max(4,Math.round(r.sales/max*90));const otRate=r.ot_n?Math.round(r.ot_reg/r.ot_n*100):0;
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:52px">
+      <div style="font-size:10.5px;color:var(--ink-3)">${man(r.sales)}만</div>
+      <div style="width:100%;max-width:34px;height:${h}px;background:var(--navy);border-radius:4px 4px 0 0"></div>
+      <div style="font-size:11px;font-weight:700">${r.month.slice(5)}월</div>
+      <div style="font-size:10px;color:var(--ink-3)">수업${r.sess}·OT${otRate}%</div></div>`;}).join('');
+  const avgSales=Math.round(mine.reduce((a,x)=>a+x.sales,0)/mine.length);
+  const avgSess=Math.round(mine.reduce((a,x)=>a+x.sess,0)/mine.length);
+  const avgOt=mine.reduce((a,x)=>a+x.ot_n,0)?Math.round(mine.reduce((a,x)=>a+x.ot_reg,0)/mine.reduce((a,x)=>a+x.ot_n,0)*100):0;
+  return `<div class="ai-note">📈 <b>${WHO} 월별 트렌드</b> — 누적 ${mine.length}개월 (${mine.map(x=>x.month).join(', ')}). 매달 쌓일수록 추이가 선명해집니다.</div>
+  <div class="kpis">
+    <div class="kpi"><div class="lab">월평균 매출</div><div class="val num">${man(avgSales)}<small>만</small></div></div>
+    <div class="kpi"><div class="lab">월평균 수업</div><div class="val num">${avgSess}<small>개</small></div></div>
+    <div class="kpi"><div class="lab">평균 OT등록률</div><div class="val num">${avgOt}<small>%</small></div></div>
+  </div>
+  <div class="card"><div class="card-h"><h2>월별 매출 추이</h2><span class="hint">막대 높이 = 매출</span></div>
+    <div style="display:flex;gap:8px;align-items:flex-end;padding:16px 20px 20px;min-height:150px">${bars}</div></div>
+  ${mine.length<2?'<div class="seed-note" style="padding:0 20px 16px">💡 아직 1개월 데이터라 추이 비교가 안 됩니다. 다음달 시드 후 2개월째부터 변화가 보입니다.</div>':''}`;
 };
 
 // ===== DB 저장 함수 =====
@@ -714,10 +760,10 @@ async function savePlan(){
 }
 async function delPlan(id){ if(!confirm('이 계획을 삭제할까요?'))return; await sb.from('plans').delete().eq('id',id); toast('삭제됨'); await loadAll();render(); }
 async function setPlanStatus(id,st){ await sb.from('plans').update({status:st}).eq('id',id); toast('상태 변경 ✅'); await loadAll();render(); }
-async function setTrial(id,st){ const reg=st==='등록'; await sb.from('trials').update({status:st,reg}).eq('id',id); toast('업데이트 ✅'); await loadAll();render(); }
+async function setTrial(id,st){ const reg=st==='등록'; await sb.from('trials').update({status:st,real_status:st,reg}).eq('id',id); toast('상태: '+st+' ✅'); await loadAll();render(); }
 function cpy(id){const el=document.getElementById(id);el.select();try{navigator.clipboard.writeText(el.value);}catch(e){try{document.execCommand('copy');}catch(_){}}toast('복사됨 ✅');}
 
-const titles={dash:['트레이너 종합','2026년 8월 · VAT제외 · 목표 수업150/매출1,000만'],plan:['당월 매출계획','계획·예상·확정 매출 + 능력 진단 + 직접 입력'],recon:['재등록 컨택','잔여 10회 미만 자동 + 직접 추가'],ot:['신규 OT 관리','8월 OT 진행·등록·전환율 + 상태 태깅'],trial:['체험 관리','당근·테라피 체험 진행·등록 + 상태 태깅'],input:['매출·수업 입력','저장하면 대시보드 실시간 반영'],member:['담당회원 특이사항','트레이너 입력 → 잔여10회↓ 컨택 자동'],consult:['상담자료 생성','회원 맞춤 후킹·ESR·SSS'],guide:['매출 1000만 전략','전자책 + 인간심리'],ai:['AI 지속 컨설팅','상황별 전략 갱신']};
+const titles={dash:['트레이너 종합','2026년 8월 · VAT제외 · 목표 수업150/매출1,000만'],plan:['당월 매출계획','계획·예상·확정 매출 + 능력 진단 + 직접 입력'],recon:['재등록 컨택','잔여 10회 미만 자동 + 직접 추가'],ot:['신규 OT 관리','실제상태(등록/미등록/진행중/보류/연기/거부) 기준'],trial:['체험 관리','당근 등 유입채널 필터 (OT 총계에 포함됨)'],trend:['월별 트렌드','매달 쌓이는 트레이너 실적 히스토리'],input:['매출·수업 입력','저장하면 대시보드 실시간 반영'],member:['담당회원 특이사항','트레이너 입력 → 잔여10회↓ 컨택 자동'],consult:['상담자료 생성','회원 맞춤 후킹·ESR·SSS'],guide:['매출 1000만 전략','전자책 + 인간심리'],ai:['AI 지속 컨설팅','상황별 전략 갱신']};
 function render(){document.getElementById('ttl').textContent=titles[CUR][0];document.getElementById('sub').textContent=titles[CUR][1];document.getElementById('view').innerHTML=V[CUR]();window.scrollTo(0,0);}
 function go(t){CUR=t;document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('on',n.dataset.t===t));render();}
 document.querySelectorAll('.nav').forEach(n=>n.onclick=()=>go(n.dataset.t));
