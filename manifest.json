@@ -1,0 +1,15 @@
+{
+  "name": "스포짐 서교점 통합 관리 시스템",
+  "short_name": "스포짐 관리",
+  "description": "PT 트레이너 매출·수업료·재등록·매출계획 통합 관리",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1120",
+  "theme_color": "#10367D",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
