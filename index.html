@@ -488,23 +488,22 @@ V.ot=()=>{
   const decided=ot.filter(t=>['등록','미등록','거부','연기','부재'].includes(t.real_status)).length; // 결론난 건
   const pending=ot.filter(t=>t.real_status==='진행중').length;
   const rate=decided?Math.round(reg/decided*100):0;
-  const amt=ot.filter(t=>t.real_status==='등록').reduce((a,t)=>a+(+t.amount||0),0);
-  const by={}; ot.forEach(t=>{const tr=t.trainer||'(미배정)';const b=by[tr]=by[tr]||{n:0,reg:0,dec:0,amt:0};b.n++;if(t.real_status==='등록'){b.reg++;b.amt+=+t.amount||0;}if(['등록','미등록','거부','연기','부재'].includes(t.real_status))b.dec++;});
-  const trRows=Object.entries(by).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good);font-weight:700">${v.reg}</td><td class="num">${v.dec?Math.round(v.reg/v.dec*100):'—'}${v.dec?'%':''}</td><td class="num">${man(v.amt)}만</td></tr>`).join('');
+  const regNames=ot.filter(t=>t.real_status==='등록').map(t=>t.member+'('+t.trainer+')').join(', ');
+  const by={}; ot.forEach(t=>{const tr=t.trainer||'(미배정)';const b=by[tr]=by[tr]||{n:0,reg:0,dec:0};b.n++;if(t.real_status==='등록')b.reg++;if(['등록','미등록','거부','연기','부재'].includes(t.real_status))b.dec++;});
+  const trRows=Object.entries(by).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}</td><td class="num" style="color:var(--good);font-weight:700">${v.reg}</td><td class="num">${v.dec?Math.round(v.reg/v.dec*100):'—'}${v.dec?'%':''}</td></tr>`).join('');
   const byCh={}; ot.forEach(t=>{const c=t.channel||'신규';byCh[c]=(byCh[c]||0)+1;});
   const chBadges=Object.entries(byCh).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="pill" style="background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);font-size:11px">${k} ${v}건</span>`).join(' ');
   const list=ot.slice().sort((a,b)=>(a.real_status==='진행중')-(b.real_status==='진행중')).map(t=>`<div class="contact"><div class="ring" style="background:${ST_COLOR[t.real_status]||'var(--ink-3)'}">${esc((t.member||'?').slice(0,1))}</div>
-    <div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.trainer||'미배정'} · ${t.channel||'신규'}${t.amount?' · 예상 '+man(t.amount)+'만':''}</span>
+    <div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.trainer||'미배정'} · ${t.channel||'신규'}${t.amount?' · 결제 '+man(t.amount)+'만(항목·기간은 엑셀 원본 확인)':''}</span>
     <div class="meta">현재 상태: <b style="color:${ST_COLOR[t.real_status]||'var(--ink-2)'}">${t.real_status||'미기재'}</b></div></div>
     ${trialTagBtns(t.id)}</div>`).join('');
-  return `<div class="ai-note">🆕 <b>신규 OT (8월)</b> — <b>당근 채널은 여기서 빠져있고 체험 관리 탭에서 별도 관리</b>합니다(당근 ${carrotN}건은 제외). 나머지 엑셀 실제상태(등록/미등록/진행중/보류/연기/부재/거부) 그대로 반영 — 결제금액은 예상액일 뿐, 상태가 "등록"인 것만 등록으로 집계.</div>
+  return `<div class="ai-note">🆕 <b>신규 OT (8월)</b> — <b>당근 채널은 여기서 빠져있고 체험 관리 탭에서 별도 관리</b>합니다(당근 ${carrotN}건은 제외). 엑셀 실제상태(등록/미등록/진행중/보류/연기/부재/거부) 그대로 반영. ⚠️ <b>OT 명단의 결제금액은 OT/체험 세션비일 뿐, 정식 PT 등록 매출이 아닙니다</b> — 실제 등록 매출은 PT매출통계·매출계획에서 확인하세요.</div>
   <div class="kpis">
     <div class="kpi"><div class="lab">🆕 OT 배정</div><div class="val num">${n}<small>건</small></div><div class="foot">채널: ${chBadges}</div></div>
-    <div class="kpi accent"><div class="lab">✅ 등록 확정</div><div class="val num">${reg}<small>건</small></div></div>
+    <div class="kpi accent"><div class="lab">✅ 등록 확정</div><div class="val num">${reg}<small>건</small></div><div class="foot">${regNames||'없음'}</div></div>
     <div class="kpi"><div class="lab">📈 등록률<span style="font-size:10px">(결론난 건 기준)</span></div><div class="val num">${rate}<small>%</small></div><div class="foot">${reg}/${decided}건 (진행중 ${pending}건 제외)</div></div>
-    <div class="kpi"><div class="lab">💰 등록매출</div><div class="val num">${man(amt)}<small>만</small></div></div>
   </div>
-  <div class="card"><div class="card-h"><h2>트레이너별 OT 등록률</h2><span class="hint">진행중 제외한 결론난 건 기준</span></div><div class="tw"><table><thead><tr><th>담당</th><th>배정</th><th>등록</th><th>등록률</th><th>등록매출</th></tr></thead><tbody>${trRows||'<tr><td colspan=5 style="padding:16px;color:var(--ink-3)">데이터 없음</td></tr>'}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>트레이너별 OT 등록률</h2><span class="hint">진행중 제외한 결론난 건 기준</span></div><div class="tw"><table><thead><tr><th>담당</th><th>배정</th><th>등록</th><th>등록률</th></tr></thead><tbody>${trRows||'<tr><td colspan=4 style="padding:16px;color:var(--ink-3)">데이터 없음</td></tr>'}</tbody></table></div></div>
   <div class="card"><div class="card-h"><h2>OT 명단 · 상태 태깅 (${ot.length}건)</h2><span class="hint">진행중 건 위로 정렬 — 아래서 상태 업데이트</span></div><div>${list||'<p style="padding:18px;color:var(--ink-3)">이번달 신규 OT가 없습니다.</p>'}</div></div>`;
 };
 // ===== 체험 관리 (당근 등 — 신규OT 총계에 이미 포함된 채널 필터 뷰, 별도 카운트 아님) =====
