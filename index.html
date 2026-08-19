@@ -430,7 +430,7 @@ V.plan=()=>{
   const typeRows=Object.entries(byType).sort((a,b)=>b[1].a-a[1].a).map(([k,v])=>`<tr><td><b>${k}</b></td><td class="num">${v.n}건</td><td class="num">${man(v.a)}만</td><td class="num" style="color:var(--good);font-weight:700">${man(v.c)}만</td><td class="num">${v.a?Math.round(v.c/v.a*100):0}%</td></tr>`).join('');
   const bestType=Object.entries(byType).sort((a,b)=>b[1].c-a[1].c)[0], weakType=Object.entries(byType).filter(x=>x[1].a>0).sort((a,b)=>(a[1].c/a[1].a)-(b[1].c/b[1].a))[0];
   // KPI — OT 등록률(결론난 건 기준, 진행중 제외)
-  const otA=tr.filter(t=>t.source==='신규OT'), otDec=otA.filter(t=>['등록','미등록','거부','연기','부재'].includes(t.real_status)), otReg=otA.filter(t=>t.real_status==='등록').length, otRate=otDec.length?Math.round(otReg/otDec.length*100):0;
+  const otA=tr.filter(t=>t.source==='신규OT'&&t.channel!=='당근'), otDec=otA.filter(t=>['등록','미등록','거부','연기','부재'].includes(t.real_status)), otReg=otA.filter(t=>t.real_status==='등록').length, otRate=otDec.length?Math.round(otReg/otDec.length*100):0;
   // 능력 진단
   let ability;
   if(WHO==='ALL'){
@@ -481,7 +481,9 @@ ${bestType?'🔥 강점 분야: '+bestType[0]+' (확정 '+man(bestType[1].c)+'�
 const ST_COLOR={등록:'var(--good)',미등록:'var(--crit)',거부:'var(--crit)',진행중:'var(--warn)',보류:'var(--warn)',연기:'var(--ink-3)',부재:'var(--ink-3)',미기재:'var(--ink-3)'};
 function trialTagBtns(id){ return `<div style="display:flex;gap:4px;flex-wrap:wrap;max-width:150px">${['등록','미등록','거부','진행중','보류','연기'].map(s=>`<button class="act" style="font-size:10.5px;padding:5px 8px;background:${ST_COLOR[s]};color:#fff;border-color:${ST_COLOR[s]}" onclick="setTrial(${id},'${s}')">${s}</button>`).join('')}</div>`; }
 V.ot=()=>{
-  const ot=DB.trials.filter(t=>t.source==='신규OT'&&isMe(t.trainer));
+  const otAll=DB.trials.filter(t=>t.source==='신규OT'&&isMe(t.trainer));
+  const carrotN=otAll.filter(t=>t.channel==='당근').length;
+  const ot=otAll.filter(t=>t.channel!=='당근'); // 당근 채널은 순수 신규OT 집계에서 제외(체험 관리 탭에서 별도 관리)
   const n=ot.length, reg=ot.filter(t=>t.real_status==='등록').length;
   const decided=ot.filter(t=>['등록','미등록','거부','연기','부재'].includes(t.real_status)).length; // 결론난 건
   const pending=ot.filter(t=>t.real_status==='진행중').length;
@@ -495,7 +497,7 @@ V.ot=()=>{
     <div class="info"><b>${esc(t.member)}</b> <span style="color:var(--ink-3);font-size:12px">· ${t.trainer||'미배정'} · ${t.channel||'신규'}${t.amount?' · 예상 '+man(t.amount)+'만':''}</span>
     <div class="meta">현재 상태: <b style="color:${ST_COLOR[t.real_status]||'var(--ink-2)'}">${t.real_status||'미기재'}</b></div></div>
     ${trialTagBtns(t.id)}</div>`).join('');
-  return `<div class="ai-note">🆕 <b>신규 OT (8월)</b> — 엑셀 실제상태(등록/미등록/진행중/보류/연기/부재/거부) 그대로 반영. <b>결제금액은 예상액</b>일 뿐 등록 확정이 아닙니다 — 상태가 "등록"인 것만 등록으로 집계.</div>
+  return `<div class="ai-note">🆕 <b>신규 OT (8월)</b> — <b>당근 채널은 여기서 빠져있고 체험 관리 탭에서 별도 관리</b>합니다(당근 ${carrotN}건은 제외). 나머지 엑셀 실제상태(등록/미등록/진행중/보류/연기/부재/거부) 그대로 반영 — 결제금액은 예상액일 뿐, 상태가 "등록"인 것만 등록으로 집계.</div>
   <div class="kpis">
     <div class="kpi"><div class="lab">🆕 OT 배정</div><div class="val num">${n}<small>건</small></div><div class="foot">채널: ${chBadges}</div></div>
     <div class="kpi accent"><div class="lab">✅ 등록 확정</div><div class="val num">${reg}<small>건</small></div></div>
